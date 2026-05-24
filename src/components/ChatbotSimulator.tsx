@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   MessageSquare, 
   Send, 
@@ -55,7 +56,7 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
   const checkAndLoadSession = async () => {
     if (!clientName.trim() || !clientPhone.trim()) return;
     try {
-      const res = await fetch(`/api/chats/session?platform=${platform}&clientPhoneOrId=${encodeURIComponent(clientPhone)}&clientName=${encodeURIComponent(clientName)}`);
+      const res = await customFetch(`/api/chats/session?platform=${platform}&clientPhoneOrId=${encodeURIComponent(clientPhone)}&clientName=${encodeURIComponent(clientName)}`);
       const data = await res.json();
       if (data.success && data.session) {
         setActiveSession(data.session);
@@ -73,7 +74,7 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
   const fetchNotifications = async () => {
     setLoadingNotifs(true);
     try {
-      const res = await fetch('/api/notifications');
+      const res = await customFetch('/api/notifications');
       const data = await res.json();
       setNotifications(data);
     } catch (err) {
@@ -89,7 +90,7 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
     setLoading(true);
     try {
       // Send first hello to kickstart conversation
-      const res = await fetch('/api/chats/message', {
+      const res = await customFetch('/api/chats/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -134,7 +135,7 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
     } : null);
 
     try {
-      const res = await fetch('/api/chats/message', {
+      const res = await customFetch('/api/chats/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -163,7 +164,7 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
   // Clear simulated notifications/logs
   const handleClearNotifications = async () => {
     try {
-      await fetch('/api/notifications', { method: 'DELETE' });
+      await customFetch('/api/notifications', { method: 'DELETE' });
       setNotifications([]);
     } catch (err) {
       console.error("Error clearing logs:", err);

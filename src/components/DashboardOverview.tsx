@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   Sparkles, 
   Wrench, 
@@ -53,7 +54,7 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
     setLoadingAi(true);
     setErrorAi('');
     try {
-      const res = await fetch('/api/ai/service-improvements');
+      const res = await customFetch('/api/ai/service-improvements');
       if (res.ok) {
         const data = await res.json();
         setAiInsights(data.insights || '');

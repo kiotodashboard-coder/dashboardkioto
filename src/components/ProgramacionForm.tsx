@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { customFetch } from '../utils/api';
 import { Clock, Save, Calculator, Sparkles, Check, AlertCircle } from 'lucide-react';
 
 interface ProgrammingConfig {
@@ -24,7 +25,7 @@ export default function ProgramacionForm() {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/config/programming');
+      const res = await customFetch('/api/config/programming');
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
@@ -75,7 +76,7 @@ export default function ProgramacionForm() {
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/config/programming', {
+      const res = await customFetch('/api/config/programming', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

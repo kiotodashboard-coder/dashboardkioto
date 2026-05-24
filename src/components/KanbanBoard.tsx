@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   Wrench, 
   User, 
@@ -56,7 +57,7 @@ export default function KanbanBoard({ services, onServiceUpdated, isAdmin }: Kan
   const updateStatus = async (id: string, newStatus: typeof statuses[number]) => {
     setUpdatingId(id);
     try {
-      const res = await fetch(`/api/servicios/${id}`, {
+      const res = await customFetch(`/api/servicios/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -81,7 +82,7 @@ export default function KanbanBoard({ services, onServiceUpdated, isAdmin }: Kan
     }
 
     try {
-      const res = await fetch(`/api/servicios/${id}`, { method: 'DELETE' });
+      const res = await customFetch(`/api/servicios/${id}`, { method: 'DELETE' });
       if (res.ok) {
         onServiceUpdated();
         setDeleteConfirmId(null);

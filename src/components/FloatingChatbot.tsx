@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   MessageSquare, 
   Send, 
@@ -67,7 +68,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
       localStorage.setItem('kioto_chat_phone', newPhone);
       setClientPhone(newPhone);
       
-      const res = await fetch(`/api/chats/session?platform=chatbot&clientPhoneOrId=${encodeURIComponent(newPhone)}&clientName=${encodeURIComponent(clientName)}`);
+      const res = await customFetch(`/api/chats/session?platform=chatbot&clientPhoneOrId=${encodeURIComponent(newPhone)}&clientName=${encodeURIComponent(clientName)}`);
       const data = await res.json();
       if (data.success && data.session) {
         setActiveSession(data.session);
@@ -103,7 +104,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   const fetchNotifications = async () => {
     setLoadingNotifs(true);
     try {
-      const res = await fetch('/api/notifications');
+      const res = await customFetch('/api/notifications');
       const data = await res.json();
       setNotifications(data);
     } catch (err) {
@@ -117,7 +118,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   const loadOrCreateSession = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/chats/session?platform=chatbot&clientPhoneOrId=${encodeURIComponent(clientPhone)}&clientName=${encodeURIComponent(clientName)}`);
+      const res = await customFetch(`/api/chats/session?platform=chatbot&clientPhoneOrId=${encodeURIComponent(clientPhone)}&clientName=${encodeURIComponent(clientName)}`);
       const data = await res.json();
       if (data.success && data.session) {
         setActiveSession(data.session);
@@ -156,7 +157,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
     } : null);
 
     try {
-      const res = await fetch('/api/chats/message', {
+      const res = await customFetch('/api/chats/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -188,7 +189,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   // Clear simulated notifications/logs in backend
   const handleClearNotifications = async () => {
     try {
-      await fetch('/api/notifications', { method: 'DELETE' });
+      await customFetch('/api/notifications', { method: 'DELETE' });
       setNotifications([]);
     } catch (err) {
       console.error("Error clearing logs:", err);

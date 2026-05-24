@@ -31,6 +31,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { User as UserType, ServicioMecanico } from './types';
+import { customFetch } from './utils/api';
 import AdminPanel from './components/AdminPanel';
 import AsesorForm from './components/AsesorForm';
 import ServiciosTaller from './components/ServiciosTaller';
@@ -82,7 +83,7 @@ export default function App() {
   const loadDashboardData = async () => {
     setLoadingLists(true);
     try {
-      const sRes = await fetch('/api/servicios');
+      const sRes = await customFetch('/api/servicios');
       
       if (sRes.ok) {
         const sData = await sRes.json();
@@ -114,7 +115,7 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      const res = await fetch('/api/auth/check-email', {
+      const res = await customFetch('/api/auth/check-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginUsername.trim() })
@@ -156,7 +157,7 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      const res = await fetch('/api/auth/set-password', {
+      const res = await customFetch('/api/auth/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginUsername.trim(), password: newPassword })
@@ -194,7 +195,7 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await customFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: loginUsername.trim(), password: loginPassword })
@@ -234,7 +235,7 @@ export default function App() {
   const handleResetDatabase = async () => {
     if (!confirm("⚠️ ¿Desea restablecer toda la base de datos 'kioto' a la configuración inicial de fábrica? Se perderán las citas nuevas.")) return;
     try {
-      const res = await fetch('/api/db/reset');
+      const res = await customFetch('/api/db/reset');
       if (res.ok) {
         setAppNotif({ type: 'success', text: "Base de datos restablecida con los usuarios de planta y citas piloto." });
         setTimeout(() => setAppNotif(null), 5000);

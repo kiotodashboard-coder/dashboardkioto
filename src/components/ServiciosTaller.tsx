@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   Wrench, 
   Download, 
@@ -395,7 +396,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   } | null>(null);
 
   useEffect(() => {
-    fetch('/api/config/programming')
+    customFetch('/api/config/programming')
       .then(res => res.json())
       .then(data => setProgConfig(data))
       .catch(err => console.error("Error loading prog parameters:", err));
@@ -451,7 +452,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     setSuccessMsg('');
 
     try {
-      const res = await fetch('/api/servicios', {
+      const res = await customFetch('/api/servicios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -497,7 +498,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const res = await fetch(`/api/servicios/${id}`, {
+      const res = await customFetch(`/api/servicios/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -672,7 +673,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       return;
     }
     try {
-      const res = await fetch(`/api/servicios/${id}`, { method: 'DELETE' });
+      const res = await customFetch(`/api/servicios/${id}`, { method: 'DELETE' });
       if (res.ok) {
         onServiceUpdated();
         const updated = new Set(selectedIds);

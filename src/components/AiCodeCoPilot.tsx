@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { customFetch } from '../utils/api';
 import { Code, Cpu, Sparkles, CheckCircle, AlertTriangle, RefreshCw, Terminal } from 'lucide-react';
 
 interface AiCodeCoPilotProps {
@@ -39,7 +40,7 @@ export default function AiCodeCoPilot({ onSuccessNotification }: AiCodeCoPilotPr
     setStatusMsg(null);
 
     try {
-      const res = await fetch('/api/ai/edit-code', {
+      const res = await customFetch('/api/ai/edit-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: targetFile, userPrompt })

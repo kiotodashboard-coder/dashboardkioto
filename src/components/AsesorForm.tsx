@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   Wrench, 
   User, 
@@ -55,7 +56,7 @@ export default function AsesorForm({ currentUser, onBookingSuccess }: AsesorForm
 
     setLoading(true);
     try {
-      const res = await fetch('/api/servicios', {
+      const res = await customFetch('/api/servicios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

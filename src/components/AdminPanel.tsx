@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { customFetch } from '../utils/api';
 import { 
   Users, 
   UserPlus, 
@@ -34,7 +35,7 @@ export default function AdminPanel({ onUsersChanged }: AdminPanelProps) {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/users');
+      const res = await customFetch('/api/users');
       if (res.ok) {
         const data = await res.json();
         setUsers(data);
@@ -83,7 +84,7 @@ export default function AdminPanel({ onUsersChanged }: AdminPanelProps) {
     try {
       if (isEditing && userId) {
         // UPDATE
-        const res = await fetch(`/api/users/${userId}`, {
+        const res = await customFetch(`/api/users/${userId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, role, name })
@@ -99,7 +100,7 @@ export default function AdminPanel({ onUsersChanged }: AdminPanelProps) {
         }
       } else {
         // CREATE / ALTA
-        const res = await fetch('/api/users', {
+        const res = await customFetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password: "", role, name })
@@ -142,7 +143,7 @@ export default function AdminPanel({ onUsersChanged }: AdminPanelProps) {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const res = await customFetch(`/api/users/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok) {
         showSuccess(`El usuario "${nameToDelete}" ha sido removido con éxito.`);
