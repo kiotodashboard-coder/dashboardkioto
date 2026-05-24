@@ -1,0 +1,6 @@
+{
+  "name": "Kioto Dashboard",
+  "description": "Dashboard integral para la gestión de concesionaria de autos con perfiles de administrador, asesor y servicio mecánico, incluyendo un chatbot inteligente de Gemini que simula WhatsApp y Facebook para agendar citas.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Representa los perfiles de usuario autorizados (Administradores, Asesores y Técnicos de servicio)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único de usuario" },
+        "username": { "type": "string", "description": "Nombre de usuario para iniciar sesión" },
+        "password": { "type": "string", "description": "Contraseña cifrada o en texto plano para pilotos" },
+        "role": { "type": "string", "enum": ["Admin", "Asesor", "Servicio"], "description": "Rol de acceso jerárquico" },
+        "name": { "type": "string", "description": "Nombre completo del usuario" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Fecha y hora de creación de la cuenta" }
+      },
+      "required": ["id", "username", "role", "name", "createdAt"]
+    },
+    "ServicioMecanico": {
+      "title": "ServicioMecanico",
+      "description": "Ordenes de reparación o mantenimiento de taller para vehículos, gestionada por asesores o el chatbot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "vehicle": { "type": "string" },
+        "vin": { "type": "string" },
+        "plate": { "type": "string" },
+        "serviceType": { "type": "string" },
+        "appointmentDate": { "type": "string" },
+        "assignedServiceUser": { "type": "string" },
+        "status": { "type": "string", "enum": ["servicio agendado", "vehículo recibido", "en proceso", "atendido"] },
+        "source": { "type": "string", "enum": ["asesor", "chatbot"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clientName", "clientPhone", "vehicle", "vin", "plate", "serviceType", "appointmentDate", "status", "source", "createdAt"]
+    },
+    "SimulatedNotification": {
+      "title": "SimulatedNotification",
+      "description": "Registro simulado de alertas y mensajes de WhatsApp enviados a los clientes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "clientName": { "type": "string" },
+        "type": { "type": "string", "enum": ["confirmacion", "recordatorio", "cambio_estatus"] },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["sent"] }
+      },
+      "required": ["id", "clientPhone", "clientName", "type", "message", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Colección de perfiles de usuarios de Kioto Auto"
+    },
+    "servicios/{servicioId}": {
+      "schema": "ServicioMecanico",
+      "description": "Historial de servicios de taller mecánico"
+    },
+    "notifications/{notificationId}": {
+      "schema": "SimulatedNotification",
+      "description": "Colección de logs simulados de WhatsApp"
+    }
+  }
+}
