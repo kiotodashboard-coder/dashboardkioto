@@ -586,17 +586,44 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
     const chats = getStoredChats();
     let session = chats.get(clientPhoneOrId);
+
+    // Fetch all services to detect if they already have an appointment
+    const serviciosSnap = await getDocs(collection(dbClient, "servicios"));
+    const allServicios = serviciosSnap.docs.map(d => d.data());
+
+    const cleanSessionPhone = clientPhoneOrId.replace(/\D/g, "");
+    let matchedService: any = null;
+    if (cleanSessionPhone.length >= 10) {
+      const targetLast10 = cleanSessionPhone.slice(-10);
+      matchedService = allServicios.find((s: any) => {
+        if (!s.clientPhone) return false;
+        const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
+        return sPhoneCleaned.endsWith(targetLast10);
+      });
+    }
+
     if (!session) {
+      const gatheredData: any = {};
+      let welcomeText = `¡Hola! Te atiende el **Asistente Kioto** 🤖. Estoy aquí para guiarte de forma sencilla, paso por paso, en el registro de tu cita de servicio mecánico en nuestro taller. Para comenzar, ¿cuál es tu nombre completo?`;
+
+      if (matchedService) {
+        gatheredData.clientName = matchedService.clientName;
+        gatheredData.clientPhone = matchedService.clientPhone;
+        gatheredData.alreadyRegistered = "true";
+        welcomeText = `¡Hola de nuevo, **${matchedService.clientName}**! Qué gusto saludarte 🤖. He detectado de manera intuitiva que tu número celular (${matchedService.clientPhone}) ya se encuentra registrado con nosotros.\n\nPara agendar un nuevo servicio, **no es necesario que vuelvas a indicar tu nombre ni teléfono/celular**.\n\n¿Qué tipo de servicio o mantenimiento mecánico requiere tu vehículo en esta ocasión? (Ej. Afinación, Cambio de aceite o Pastillas de freno).`;
+      }
+
       session = {
         id: `chat-${clientPhoneOrId}`,
         clientPhoneOrId,
-        clientName,
+        clientName: matchedService ? matchedService.clientName : clientName,
         createdAt: new Date().toISOString(),
+        gatheredData,
         messages: [
           {
-            id: "msg-welcome",
+            id: `msg-welcome-${Date.now()}`,
             sender: "bot",
-            text: `¡Hola ${clientName}! Bienvenido a Kioto Mecánica. 🌟 ¿Te gustaría agendar una cita o consultar el estatus de tu coche?`,
+            text: welcomeText,
             timestamp: new Date().toISOString()
           }
         ]
@@ -619,6 +646,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         clientPhoneOrId,
         clientName,
         createdAt: new Date().toISOString(),
+        gatheredData: {},
         messages: []
       };
     }
@@ -631,49 +659,243 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
     };
     session.messages.push(userMsg);
 
-    // Dynamic, high-fidelity rule-based chatbot simulation
-    const txt = userText.toLowerCase();
-    let replyText = "";
+    // 1. Fetch current Programming Config from client Firestore
+    const configRef = doc(dbClient, "config", "programming");
+    const configSnap = await getDoc(configRef);
+    const config = configSnap.exists() ? configSnap.data() : {
+      maxServicesPerSlot: 2,
+      slotIntervalMinutes: 30,
+      openingTime: "08:00",
+      closingTime: "18:00"
+    };
+
+    const maxServices = Number(config.maxServicesPerSlot) || 2;
+    const intervalMinutes = Number(config.slotIntervalMinutes) || 30;
+    const openTime = config.openingTime || "08:00";
+    const closeTime = config.closingTime || "18:00";
+
+    // 2. Fetch current Servicios to prevent slot overbooking
+    const serviciosSnap = await getDocs(collection(dbClient, "servicios"));
+    const allServicios = serviciosSnap.docs.map(d => d.data());
+
+    const generateSlots = (openT: string, closeT: string, intervalMin: number): string[] => {
+      const slots: string[] = [];
+      const [startHour, startMin] = openT.split(':').map(Number);
+      const [endHour, endMin] = closeT.split(':').map(Number);
+      const startTotalMinutes = startHour * 60 + startMin;
+      const endTotalMinutes = endHour * 60 + endMin;
+      const step = intervalMin <= 0 ? 30 : intervalMin;
+      for (let m = startTotalMinutes; m <= endTotalMinutes; m += step) {
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        slots.push(`${hh}:${mm}`);
+      }
+      return slots;
+    };
+
+    const getAvailableSlots = (dateStr: string, list: any[]): string[] => {
+      const basicSlots = generateSlots(openTime, closeTime, intervalMinutes);
+      return basicSlots.filter(s => {
+        const slotDateTime = `${dateStr}T${s}`;
+        const count = list.filter((serv: any) => serv.appointmentDate === slotDateTime).length;
+        return count < maxServices;
+      });
+    };
+
+    const gathered = session.gatheredData || {};
+    let botReply = "";
     let bookingOutcome = false;
 
-    if (txt.includes("hola") || txt.includes("buenos") || txt.includes("tarde")) {
-      replyText = `¡Hola de nuevo ${clientName}! Bienvenido al Asistente Kioto. Dime, ¿deseas agendar un servicio o conocer el estatus?`;
-    } else if (txt.includes("agenda") || txt.includes("cita") || txt.includes("taller") || txt.includes("mantenimiento")) {
-      replyText = `¡Excelente! Para agendar tu servicio, indícame por favor:\n1️⃣ Vehículo (ej. SUV LX)\n2️⃣ Placas\n3️⃣ Fecha y Hora sugerida (ej. 2026-05-26T10:00)`;
-    } else if (/\b\d{4}-\\d{2}-\\d{2}/.test(txt) || txt.includes("kio") || txt.includes(":") || txt.includes("placas") || txt.includes("2026")) {
-      // Create a service appointment dynamically
-      bookingOutcome = true;
-      replyText = `¡Perfecto! He interpretado tus datos. Se ha registrado exitosamente una cita para el vehículo Kioto en nuestro taller. Te acabamos de enviar los detalles y recordatorios a tu WhatsApp.`;
-      
-      // Seed a service document dynamically to keep user interface populated
-      const id = `serv-${Date.now()}`;
-      const newServ = {
-        id,
-        clientName,
-        clientPhone: clientPhoneOrId.startsWith("cli-") ? "+52 55 9812 7311" : clientPhoneOrId,
-        vehicle: "Kioto Sedan Virtual",
-        vin: "KIO" + Math.random().toString(36).substring(2, 12).toUpperCase(),
-        plate: "KIO-772-V",
-        serviceType: "Mantenimiento Preventivo",
-        appointmentDate: "2026-05-28T10:00",
-        assignedServiceUser: "Carlos Taller (Técnico)",
-        status: "servicio agendado",
-        source: "chatbot",
-        notes: "Servicio pre-agendado vía Chatbot interactivo en Vercel.",
-        createdAt: new Date().toISOString(),
-        statusHistory: {
-          "servicio agendado": new Date().toISOString()
-        }
-      };
-      await setDoc(doc(dbClient, "servicios", id), newServ);
-    } else {
-      replyText = `Comprendo tu mensaje. Estoy listo para ayudarte a coordinar tus servicios técnicos. Escribe "Agendar" para registrar una nueva entrada.`;
+    const textLower = userText.toLowerCase();
+
+    // Check if client phone matches any active service
+    const cleanSessionPhone = clientPhoneOrId.replace(/\D/g, "");
+    let activeServiceFound: any = null;
+    let matchedService: any = null;
+    if (cleanSessionPhone.length >= 10) {
+      const targetLast10 = cleanSessionPhone.slice(-10);
+      matchedService = allServicios.find((s: any) => {
+        if (!s.clientPhone) return false;
+        const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
+        return sPhoneCleaned.endsWith(targetLast10);
+      });
+      activeServiceFound = allServicios.find((s: any) => {
+        if (!s.clientPhone) return false;
+        const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
+        return sPhoneCleaned.endsWith(targetLast10) && s.status !== "entregado";
+      });
     }
+
+    if (matchedService && !gathered.clientName) {
+      gathered.clientName = matchedService.clientName;
+      gathered.clientPhone = matchedService.clientPhone;
+      gathered.alreadyRegistered = "true";
+    }
+
+    if (activeServiceFound && !gathered.serviceCheckedAlready) {
+      botReply = `¡Hola! He verificado tu número en nuestro sistema Kioto Auto y encontré que tienes un servicio activo/agendado con nosotros:
+      
+🚗 *Vehículo*: ${activeServiceFound.vehicle}
+🏷 *Placas*: ${activeServiceFound.plate || "No registradas"}
+🛠 *Servicio*: ${activeServiceFound.serviceType}
+📅 *Fecha*: ${activeServiceFound.appointmentDate.replace("T", " a las ")}
+📈 *Estatus*: 🟢 ${activeServiceFound.status.toUpperCase()}
+
+¿Te gustaría agendar **otro servicio adicional** para este o para algún otro automóvil? (Por favor responde **SÍ** para iniciar el nuevo registro).`;
+      gathered.serviceCheckedAlready = "true";
+      gathered.awaitingNewBookingConfirmation = "true";
+    } else if (gathered.awaitingNewBookingConfirmation === "true") {
+      delete gathered.awaitingNewBookingConfirmation;
+      if (textLower.includes("sí") || textLower.includes("si") || textLower.includes("ok") || textLower.includes("correcto") || textLower.includes("claro") || textLower.includes("otro")) {
+        botReply = `¡Excelente! Vamos a registrar tu nueva cita de servicio mecánico. ¿Cuál es tu nombre completo para esta nueva cita?`;
+      } else {
+        botReply = `Entendido. Te confirmamos que tu cita ya registrada sigue activa y programada con éxito en nuestro taller Kioto Auto. ¡Te esperamos!`;
+      }
+    } else if (!gathered.clientName) {
+      gathered.clientName = userText;
+      if (clientPhoneOrId && clientPhoneOrId.startsWith("cli-")) {
+        botReply = `Mucho gusto, *${userText}*. ¿Me indicas también tu número de Teléfono Celular/WhatsApp de 10 dígitos para enviarte la confirmación?`;
+      } else {
+        gathered.clientPhone = clientPhoneOrId;
+        botReply = `Mucho gusto, *${userText}*. ¿Qué tipo de servicio o mantenimiento mecánico requiere su vehículo? (Por ejemplo: afinación, cambio de aceite o revisión de frenos).`;
+      }
+    } else if (!gathered.clientPhone && clientPhoneOrId && clientPhoneOrId.startsWith("cli-")) {
+      gathered.clientPhone = userText;
+      botReply = `Gracias por registrar tu número: *${userText}*.\n\n¿Qué tipo de servicio o mantenimiento mecánico requiere su vehículo? (Por ejemplo: afinación, cambio de aceite o revisión de frenos).`;
+    } else if (!gathered.serviceType) {
+      gathered.serviceType = userText;
+      botReply = `Entendido, servicio para *${userText}*.\n\nAhora por favor proporcione los datos de su vehículo: **Marca, Modelo y Año** (por ejemplo: Kioto Hybrid 2025).`;
+    } else if (!gathered.vehicle) {
+      gathered.vehicle = userText;
+      botReply = `Registrado: *${userText}*.\n\nPor favor proporcione el número de **Placa** de circulación del vehículo.`;
+    } else if (!gathered.plate) {
+      gathered.plate = userText.toUpperCase();
+      botReply = `Placa *${gathered.plate}* registrada.\n\nAhora, indique el **NIV** de 17 caracteres (Número de Identificación Vehicular) para el registro completo.`;
+    } else if (!gathered.vin) {
+      gathered.vin = userText.toUpperCase();
+      botReply = `NIV registrado con éxito.\n\nPor último, por favor proporcione la **fecha** deseada para su servicio mecánico (en formato AÑO-MES-DÍA, por ejemplo: \`2026-05-25\`).`;
+    } else if (!gathered.tempDate && !gathered.appointmentDate) {
+      const dateMatch = userText.match(/(\d{4}-\d{2}-\d{2})/);
+      const dateStr = dateMatch ? dateMatch[1] : userText.trim();
+      
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        botReply = `Por favor proporcione una fecha válida en formato AÑO-MES-DÍA, como \`2026-05-25\`.`;
+      } else {
+        const availableSlots = getAvailableSlots(dateStr, allServicios);
+        if (availableSlots.length > 0) {
+          gathered.tempDate = dateStr;
+          botReply = `Para la fecha **${dateStr}** tenemos los siguientes horarios disponibles en nuestro taller:\n\n${availableSlots.map((s, i) => `• Opción ${i+1}: *${s}*`).join('\n')}\n\n¿Cuál de estos horarios te queda mejor? Por favor escríbeme la hora propuesta.`;
+        } else {
+          let nextDate = new Date(dateStr);
+          let foundDateStr = "";
+          let nextAvailableSlots: string[] = [];
+          for (let i = 1; i <= 7; i++) {
+            nextDate.setDate(nextDate.getDate() + 1);
+            const tryDateStr = nextDate.toISOString().slice(0, 10);
+            const trySlots = getAvailableSlots(tryDateStr, allServicios);
+            if (trySlots.length > 0) {
+              foundDateStr = tryDateStr;
+              nextAvailableSlots = trySlots;
+              break;
+            }
+          }
+          if (foundDateStr) {
+            gathered.tempDate = foundDateStr;
+            botReply = `Disculpa, nuestro taller ya cuenta con sobrecupo de citas asignadas para el día **${dateStr}**.\n\nSin embargo, la fecha disponible más cercana es el **${foundDateStr}**, con estos horarios libres:\n\n${nextAvailableSlots.map((s, i) => `• Opción ${i+1}: *${s}*`).join('\n')}\n\n¿Te parecería elegir uno de estos horarios? Escríbeme la hora propuesta.`;
+          } else {
+            gathered.tempDate = dateStr;
+            botReply = `Para la fecha propuesta el cupo está reservado temporalmente. Intentemos proponerlo a las *${openTime}*. ¿Está de acuerdo, o prefiere otra hora?`;
+          }
+        }
+      }
+    } else if (gathered.tempDate && !gathered.appointmentDate) {
+      const availableSlots = getAvailableSlots(gathered.tempDate, allServicios);
+      let chosenTime: string | null = null;
+      const textClean = userText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+      const numberMatches = textClean.match(/\b\d+\b/);
+      const isTimeFormat = /:\d{2}/.test(textClean) || /\b\d{1,2}\s+\d{2}\b/.test(textClean) || /\b\d{1,2}\.\d{2}\b/.test(textClean);
+
+      let indexFromText = -1;
+      if (numberMatches && !isTimeFormat) {
+        const num = parseInt(numberMatches[0], 10);
+        if (num >= 1 && num <= availableSlots.length) {
+          indexFromText = num - 1;
+        }
+      }
+
+      if (indexFromText !== -1) {
+        chosenTime = availableSlots[indexFromText];
+      } else {
+        const timeColonMatch = textClean.replace(/\s/g, '').match(/(\d{1,2}):(\d{2})/);
+        if (timeColonMatch) {
+          chosenTime = `${timeColonMatch[1].padStart(2, '0')}:${timeColonMatch[2]}`;
+        } else {
+          const timeDotMatch = textClean.replace(/\s/g, '').match(/(\d{1,2})\.(\d{2})/);
+          if (timeDotMatch) {
+            chosenTime = `${timeDotMatch[1].padStart(2, '0')}:${timeDotMatch[2]}`;
+          } else {
+            const plainMatch = textClean.replace(/\s/g, '').match(/(\d{3,4})/);
+            if (plainMatch) {
+              const val = plainMatch[1];
+              chosenTime = val.length === 3 ? `0${val[0]}:${val.slice(1)}` : `${val.slice(0, 2)}:${val.slice(2)}`;
+            } else {
+              const spaceMatch = textClean.match(/\b(\d{1,2})\s+(\d{2})\b/);
+              if (spaceMatch) {
+                chosenTime = `${spaceMatch[1].padStart(2, '0')}:${spaceMatch[2]}`;
+              }
+            }
+          }
+        }
+      }
+
+      if (!chosenTime || !/^\d{2}:\d{2}$/.test(chosenTime) || !availableSlots.includes(chosenTime)) {
+        botReply = `Por favor indique la opción de horario preferida (por ejemplo: \`Opción 4\`, \`08:20\` o \`8:20\`). Las opciones libres son:\n\n${availableSlots.map((s, i) => `• Opción ${i+1}: *${s}*`).join('\n')}`;
+      } else {
+        const proposedFull = `${gathered.tempDate}T${chosenTime}`;
+        gathered.appointmentDate = proposedFull;
+
+        // Register service appointment into database
+        const id = `serv-${Date.now()}`;
+        const newServicio = {
+          id,
+          clientName: gathered.clientName,
+          clientPhone: gathered.clientPhone || clientPhoneOrId,
+          vehicle: gathered.vehicle,
+          vin: gathered.vin || "S/NIV",
+          plate: gathered.plate || "S/PLACA",
+          serviceType: gathered.serviceType,
+          appointmentDate: proposedFull,
+          assignedServiceUser: "Carlos Taller (Técnico)",
+          status: "servicio agendado",
+          source: "chatbot",
+          notes: "Cita agendada automáticamente por asistente virtual en Vercel.",
+          createdAt: new Date().toISOString(),
+          statusHistory: {
+            "servicio agendado": new Date().toISOString()
+          }
+        };
+
+        await setDoc(doc(dbClient, "servicios", id), newServicio);
+        bookingOutcome = true;
+
+        // Format WhatsApp notification details
+        const formattedDate = proposedFull.replace("T", " a las ");
+        const confirmMsg = `🔧 *KIOTO SERVICIO MECÁNICO - CONFIRMACIÓN* 🔧\n\nEstimado(a) *${gathered.clientName}*,\nTu servicio de taller Kioto ha sido agendado exitosamente:\n\n🚙 *Vehículo*: ${gathered.vehicle}\n🏷️ *Placas*: ${gathered.plate}\n📆 *Hora*: ${formattedDate}\n🛠️ *Servicio*: *${gathered.serviceType}*\n\n¡Te esperamos!`;
+        triggerClientWhatsAppLog(gathered.clientName, gathered.clientPhone || clientPhoneOrId, "confirmacion", confirmMsg);
+
+        botReply = `¡Felicidades, **${gathered.clientName}**! Tu cita para **${gathered.serviceType}** ha sido registrada con éxito para el día y hora seleccionados:\n\n📅 **${formattedDate}**\n🚗 **Auto**: ${gathered.vehicle}\n🏷️ **Placa**: ${gathered.plate}\n⚙️ Estatus: *Servicio Agendado*\n\nTe acabamos de enviar una confirmación automática completa a tu WhatsApp con los detalles del técnico asignado y las garantías oficiales. ¿Puedo ayudarte en alguna otra consulta hoy?`;
+      }
+    } else {
+      botReply = `¡Hola! Tu cita de taller ya está programada. Deseas información de precios o de alguna otra orden de servicio técnica?`;
+    }
+
+    session.gatheredData = gathered;
 
     const botMsg = {
       id: `msg-bot-${Date.now()}`,
       sender: "bot",
-      text: replyText,
+      text: botReply,
       timestamp: new Date().toISOString()
     };
     session.messages.push(botMsg);

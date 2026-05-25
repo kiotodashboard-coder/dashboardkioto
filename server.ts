@@ -911,10 +911,18 @@ INSTRUCCIONES CLAVE:
 // --- GEMINI INTELLIGENT CHATBOT ENGINE ---
 app.get("/api/chats", async (req, res) => {
   try {
-    const chats = Array.from(simulatedChats.values());
+    const snap = await getDocs(collection(db, "chats"));
+    const chats = snap.docs.map(d => d.data());
+    // Also merge in-memory if needed
+    for (const c of simulatedChats.values()) {
+      if (!chats.some((x: any) => x.id === c.id)) {
+        chats.push(c);
+      }
+    }
     res.json(chats);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const chats = Array.from(simulatedChats.values());
+    res.json(chats);
   }
 });
 
@@ -924,12 +932,23 @@ app.get("/api/chats/session", async (req, res) => {
     return res.status(400).json({ error: "Faltan plataforma o identificador del cliente" });
   }
 
-  try {
-    const chats = Array.from(simulatedChats.values());
+  const sId = `${platform}-${clientPhoneOrId}`;
 
-    let session = chats.find(
-      (c: any) => c.platform === platform && c.clientPhoneOrId === clientPhoneOrId
-    );
+  try {
+    let session: any = null;
+    try {
+      const chatRef = doc(db, "chats", sId);
+      const chatSnap = await getDoc(chatRef);
+      if (chatSnap.exists()) {
+        session = chatSnap.data();
+      }
+    } catch (dbErr) {
+      console.error("Firestore chat load failed, falling back to memory:", dbErr);
+    }
+
+    if (!session) {
+      session = simulatedChats.get(sId);
+    }
 
     const dateNowStr = new Date().toISOString();
 
@@ -961,7 +980,7 @@ app.get("/api/chats/session", async (req, res) => {
       }
 
       session = {
-        id: `chat-${Date.now()}`,
+        id: sId,
         platform,
         clientPhoneOrId,
         clientName: matchedService ? matchedService.clientName : (clientName || "Invitado Taller"),
@@ -984,7 +1003,13 @@ app.get("/api/chats/session", async (req, res) => {
         createdAt: dateNowStr,
         updatedAt: dateNowStr
       };
-      simulatedChats.set(session.id, session);
+      
+      simulatedChats.set(sId, session);
+      try {
+        await setDoc(doc(db, "chats", sId), session);
+      } catch (dbErr) {
+        console.error("Firestore chat save failed:", dbErr);
+      }
     }
 
     res.json({ success: true, session });
@@ -1045,9 +1070,21 @@ app.post("/api/chats/message", async (req, res) => {
       });
     };
 
-    let session = chats.find(
-      (c: any) => c.platform === platform && c.clientPhoneOrId === clientPhoneOrId
-    );
+    const sId = `${platform}-${clientPhoneOrId}`;
+    let session: any = null;
+    try {
+      const chatRef = doc(db, "chats", sId);
+      const chatSnap = await getDoc(chatRef);
+      if (chatSnap.exists()) {
+        session = chatSnap.data();
+      }
+    } catch (dbErr) {
+      console.error("Firestore chat load failed, falling back to memory:", dbErr);
+    }
+
+    if (!session) {
+      session = simulatedChats.get(sId);
+    }
 
     const dateNowStr = new Date().toISOString();
 
@@ -1074,7 +1111,7 @@ app.post("/api/chats/message", async (req, res) => {
       }
 
       session = {
-        id: `chat-${Date.now()}`,
+        id: sId,
         platform,
         clientPhoneOrId,
         clientName: matchedService ? matchedService.clientName : (clientName || "Invitado Taller"),
@@ -1575,7 +1612,12 @@ INSTRUCCIÓN CRÍTICA DE APRENDIZAJE: ¡NO le vuelvas a pedir su nombre completo
     });
 
     session.updatedAt = dateNowStr;
-    simulatedChats.set(session.id, session);
+    simulatedChats.set(sId, session);
+    try {
+      await setDoc(doc(db, "chats", sId), session);
+    } catch (dbErr) {
+      console.error("Firestore chat save failed:", dbErr);
+    }
 
     res.json({
       success: true,

@@ -39,8 +39,18 @@ import FloatingChatbot from './components/FloatingChatbot';
 import ProgramacionForm from './components/ProgramacionForm';
 import DashboardOverview from './components/DashboardOverview';
 import AiCodeCoPilot from './components/AiCodeCoPilot';
+import EmbeddedChatbotView from './components/EmbeddedChatbotView';
 
 export default function App() {
+  const isEmbeddedChatbot = typeof window !== 'undefined' && (
+    window.location.search.includes('embed=true') || 
+    window.location.search.includes('chatbot=true')
+  );
+
+  if (isEmbeddedChatbot) {
+    return <EmbeddedChatbotView />;
+  }
+
   const [currentUser, setCurrentUser] = useState<UserType | null>(() => {
     const saved = localStorage.getItem('kioto_curr_user');
     return saved ? JSON.parse(saved) : null;
