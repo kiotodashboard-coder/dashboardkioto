@@ -188,7 +188,7 @@ export default function EmbeddedChatbotView() {
               <h1 className="text-sm font-bold tracking-tight text-gray-100">Asistente Kioto</h1>
               <p className="text-[10px] text-emerald-400 font-semibold flex items-center space-x-1">
                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block animate-pulse"></span>
-                <span>Agenda de citas en fosa</span>
+                <span>Agenda de servicios</span>
               </p>
             </div>
           </div>
@@ -298,24 +298,6 @@ export default function EmbeddedChatbotView() {
             <Send className="w-4 h-4" />
           </button>
         </form>
-
-        {/* WhatsApp confirmation simulation helper alert link */}
-        {notifications.length > 0 && (
-          <div className="absolute top-18 left-4 right-4 bg-emerald-600 text-white text-[11px] p-2.5 rounded-xl shadow-lg flex items-center justify-between animate-bounce">
-            <div className="flex items-center space-x-2">
-              <span className="w-2 h-2 rounded-full bg-white inline-block animate-ping"></span>
-              <span>📱 ¡Notificación de Confirmación WhatsApp generada!</span>
-            </div>
-            <button 
-              onClick={() => {
-                alert(`📱 WHATSAPP SIMULADOR:\n\n${notifications[notifications.length - 1].loggedText}`);
-              }}
-              className="bg-white text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] uppercase cursor-pointer"
-            >
-              Ver
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

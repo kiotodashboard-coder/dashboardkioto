@@ -715,13 +715,6 @@ export default function App() {
               {/* VIEW: SYSTEM CONFIGURATION (Admin only) */}
               {activeTab === 'config' && currentUser.role === 'Admin' && (
                 <div className="space-y-6">
-                  <AiCodeCoPilot
-                    onSuccessNotification={(txt) => {
-                      setAppNotif({ type: 'success', text: txt });
-                      setTimeout(() => setAppNotif(null), 5000);
-                      loadDashboardData();
-                    }}
-                  />
 
                   <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 animate-fade-in">
                     <div>

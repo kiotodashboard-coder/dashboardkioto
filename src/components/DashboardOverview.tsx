@@ -173,6 +173,50 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
     return { text: formatDuration(hrs), isReal: true };
   };
 
+  // Calculado dinámicamente de filteredServices para dibujar un gráfico de líneas real
+  const lineChartData = React.useMemo(() => {
+    // Generar últimos 7 días con citas registradas, o crear los últimos 7 días del calendario
+    const dates: { label: string; count: number; dateStr: string }[] = [];
+    const now = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      const label = d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' });
+      const iso = d.toISOString().slice(0, 10);
+      
+      // Contar servicios agendados el mismo día calendarico
+      const count = filteredServices.filter(s => {
+        if (!s.appointmentDate) return false;
+        return s.appointmentDate.startsWith(iso);
+      }).length;
+      
+      dates.push({ label, count, dateStr: iso });
+    }
+    return dates;
+  }, [filteredServices]);
+
+  // Dimensiones del SVG del gráfico de líneas
+  const svgW = 460;
+  const svgH = 150;
+  const padX = 35;
+  const padY = 25;
+
+  const maxVal = Math.max(...lineChartData.map(d => d.count), 4);
+  const chartPoints = lineChartData.map((d, idx) => {
+    const x = padX + (idx * (svgW - padX * 2)) / (lineChartData.length - 1);
+    const y = svgH - padY - (d.count * (svgH - padY * 2)) / maxVal;
+    return { x, y, ...d };
+  });
+
+  const linePath = chartPoints.length > 0 
+    ? `M ${chartPoints[0].x} ${chartPoints[0].y} ` + chartPoints.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
+    : '';
+
+  const areaPath = chartPoints.length > 0
+    ? `${linePath} L ${chartPoints[chartPoints.length - 1].x} ${svgH - padY} L ${chartPoints[0].x} ${svgH - padY} Z`
+    : '';
+
   // EXPORTACION DE REPORTE FILTRADO
   const handleExportFilteredCSV = () => {
     if (filteredServices.length === 0) {
@@ -598,83 +642,143 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CHARTS CONTAINER COLUMN */}
         <div className="space-y-6">
-          {/* Chart 1: Distribution by Chanel */}
+          {/* Chart 1: Trend Line Chart of Appointments */}
           <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm space-y-4">
-            <div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-zinc-900">Origen de las Reservaciones</h3>
-              <p className="text-[11px] text-gray-500">¿Qué canales prefieren tus clientes para programar citas?</p>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-widest text-zinc-900">Histórico y Tendencia de Servicios</h3>
+                <p className="text-[11px] text-gray-500">Mapeo analítico del volumen diario de citas agendadas de taller (Gráfica de Líneas)</p>
+              </div>
+              <span className="text-[9px] bg-slate-100 text-slate-800 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+                Últimos 7 días
+              </span>
             </div>
 
-            {/* Custom SVG bar visualization */}
-            <div className="space-y-4 pt-2">
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-xs font-bold overflow-hidden">
-                  <span className="text-gray-700 flex items-center gap-1.5 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                    Chatbot IA (Pág. Oficial / Sistema)
-                  </span>
-                  <span className="text-slate-900 font-extrabold">{countChatbotIA} ({getPct(countChatbotIA)}%)</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-lg h-3 overflow-hidden">
-                  <div 
-                    className="bg-blue-500 h-full rounded-lg transition-all duration-1000"
-                    style={{ width: `${getPct(countChatbotIA)}%` }}
-                  />
-                </div>
-              </div>
+            {/* Custom Interactive SVG Line Chart */}
+            <div className="pt-2 select-none relative">
+              <svg viewBox="0 0 460 155" className="w-full h-auto overflow-visible">
+                <defs>
+                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.00" />
+                  </linearGradient>
+                </defs>
 
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-xs font-bold overflow-hidden">
-                  <span className="text-gray-700 flex items-center gap-1.5 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    WhatsApp
-                  </span>
-                  <span className="text-slate-900 font-extrabold">{countWhatsApp} ({getPct(countWhatsApp)}%)</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-lg h-3 overflow-hidden">
-                  <div 
-                    className="bg-emerald-500 h-full rounded-lg transition-all duration-1000"
-                    style={{ width: `${getPct(countWhatsApp)}%` }}
-                  />
-                </div>
-              </div>
+                {/* Grid Lines */}
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
+                  const y = 25 + ratio * (150 - 25 - 25);
+                  return (
+                    <line
+                      key={i}
+                      x1={35}
+                      y1={y}
+                      x2={460 - 35}
+                      y2={y}
+                      stroke="#f1f5f9"
+                      strokeWidth="1"
+                      strokeDasharray="4 4"
+                    />
+                  );
+                })}
 
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-xs font-bold overflow-hidden">
-                  <span className="text-gray-700 flex items-center gap-1.5 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                    Facebook Messenger
-                  </span>
-                  <span className="text-slate-900 font-extrabold">{countFacebook} ({getPct(countFacebook)}%)</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-lg h-3 overflow-hidden">
-                  <div 
-                    className="bg-indigo-500 h-full rounded-lg transition-all duration-1000"
-                    style={{ width: `${getPct(countFacebook)}%` }}
-                  />
-                </div>
-              </div>
+                {/* Y-Axis helper indices */}
+                <text x={12} y={30} className="text-[9px] font-bold fill-gray-400" textAnchor="start">
+                  {maxVal}
+                </text>
+                <text x={12} y={150 - 25} className="text-[9px] font-bold fill-gray-400" textAnchor="start">
+                  0
+                </text>
 
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-xs font-bold overflow-hidden">
-                  <span className="text-gray-700 flex items-center gap-1.5 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                    Asesor de Planta (Manual)
-                  </span>
-                  <span className="text-slate-900 font-extrabold">{countAsesor} ({getPct(countAsesor)}%)</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-lg h-3 overflow-hidden">
-                  <div 
-                    className="bg-amber-500 h-full rounded-lg transition-all duration-1000"
-                    style={{ width: `${getPct(countAsesor)}%` }}
-                  />
-                </div>
+                {/* Line Path with Area Gradient */}
+                {chartPoints.length > 0 && (
+                  <>
+                    <path
+                      d={areaPath}
+                      fill="url(#chartGrad)"
+                      className="transition-all duration-700 ease-in-out"
+                    />
+                    <path
+                      d={linePath}
+                      fill="none"
+                      stroke="#4f46e5"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="transition-all duration-700 ease-in-out"
+                    />
+                  </>
+                )}
+
+                {/* Points and Hover Overlays */}
+                {chartPoints.map((p, idx) => (
+                  <g key={idx} className="group cursor-pointer">
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r="10"
+                      fill="#4f46e5"
+                      fillOpacity="0.1"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r="4.5"
+                      fill="#FFFFFF"
+                      stroke="#4f46e5"
+                      strokeWidth="2.5"
+                      className="transition-all duration-300 transform group-hover:scale-135"
+                    />
+                    {/* Tooltip dynamic hover bubble or persistent small label */}
+                    <text
+                      x={p.x}
+                      y={p.y - 10}
+                      textAnchor="middle"
+                      className="text-[10px] font-extrabold fill-slate-900 opacity-80 group-hover:opacity-100 transition-opacity"
+                    >
+                      {p.count}
+                    </text>
+                  </g>
+                ))}
+
+                {/* X-Axis labels labels */}
+                {chartPoints.map((p, idx) => (
+                  <text
+                    key={idx}
+                    x={p.x}
+                    y={150 - 6}
+                    textAnchor="middle"
+                    className="text-[9px] font-bold fill-slate-400 uppercase tracking-tight"
+                  >
+                    {p.label}
+                  </text>
+                ))}
+              </svg>
+            </div>
+
+            {/* Quick summary below chart */}
+            <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-100">
+              <div className="text-center bg-slate-50 border border-slate-100 p-2 rounded-xl">
+                <span className="text-[8px] font-bold text-gray-500 uppercase block">Total</span>
+                <span className="text-sm font-black text-slate-900">{total}</span>
+              </div>
+              <div className="text-center bg-blue-50/40 border border-blue-100 p-2 rounded-xl">
+                <span className="text-[8px] font-bold text-blue-700 uppercase block">Promedio</span>
+                <span className="text-sm font-black text-blue-950">{(total / 7).toFixed(1)}/día</span>
+              </div>
+              <div className="text-center bg-violet-50/40 border border-violet-100 p-2 rounded-xl">
+                <span className="text-[8px] font-bold text-violet-700 uppercase block">Pico Max</span>
+                <span className="text-sm font-black text-violet-950">{maxVal}</span>
+              </div>
+              <div className="text-center bg-emerald-50/40 border border-emerald-100 p-2 rounded-xl">
+                <span className="text-[8px] font-bold text-emerald-700 uppercase block">Canales IA</span>
+                <span className="text-sm font-black text-emerald-950">{getPct(countChatbotIA + countWhatsApp + countFacebook)}%</span>
               </div>
             </div>
             
-            <div className="text-[10px] bg-slate-50 text-slate-600 rounded-xl p-3 border border-slate-100 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Los canales automáticos (Chatbot IA, WhatsApp y Facebook) agrupan el <strong>{getPct(countChatbotIA + countWhatsApp + countFacebook)}%</strong> de tus citas totales programadas.</span>
+            <div className="text-[10px] bg-indigo-50/30 text-indigo-950 rounded-xl p-3 border border-indigo-100/50 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>El tráfico continuo en las frentes de captura demuestra estabilidad operativa con picos de demanda optimizados por la agenda automática.</span>
             </div>
           </div>
 
