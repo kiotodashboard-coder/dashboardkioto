@@ -29,9 +29,11 @@ interface SignaturePadProps {
   onSave: (base64: string) => void;
   onClear: () => void;
   savedDataUrl?: string;
+  heightClass?: string;
+  heightAttr?: number;
 }
 
-function SignaturePad({ title, onSave, onClear, savedDataUrl }: SignaturePadProps) {
+function SignaturePad({ title, onSave, onClear, savedDataUrl, heightClass = 'h-28', heightAttr = 130 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSigned, setHasSigned] = useState(!!savedDataUrl);
@@ -139,7 +141,7 @@ function SignaturePad({ title, onSave, onClear, savedDataUrl }: SignaturePadProp
       <canvas
         ref={canvasRef}
         width={350}
-        height={130}
+        height={heightAttr}
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={endDrawing}
@@ -147,13 +149,13 @@ function SignaturePad({ title, onSave, onClear, savedDataUrl }: SignaturePadProp
         onTouchStart={startDrawing}
         onTouchMove={draw}
         onTouchEnd={endDrawing}
-        className="w-full h-28 bg-white border border-gray-300 rounded-lg cursor-crosshair touch-none"
+        className={`w-full ${heightClass} bg-white border border-gray-300 rounded-lg cursor-crosshair touch-none`}
       />
       <div className="flex justify-end gap-2">
         <button
           type="button"
           onClick={clearCanvas}
-          className="text-[10px] text-gray-500 hover:text-rose-600 font-bold uppercase transition-colors"
+          className="text-[10px] text-gray-500 hover:text-rose-600 font-bold uppercase transition-colors animate-fade-in"
         >
           Borrar Firma
         </button>
@@ -170,9 +172,10 @@ interface CameraCaptureProps {
   onCapture: (base64: string) => void;
   savedImage?: string;
   hideUpload?: boolean;
+  fluidMulti?: boolean;
 }
 
-function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptureProps) {
+function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -228,9 +231,24 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const b64 = canvas.toDataURL('image/jpeg', 0.85);
-    setPreview(b64);
-    onCapture(b64);
-    stopStreaming();
+    
+    if (fluidMulti) {
+      // Rapid fire! Call callback directly, do not close or set preview element
+      onCapture(b64);
+      
+      // Flash effect for premium feedback on capture
+      const container = video.parentElement;
+      if (container) {
+        container.classList.add('brightness-150');
+        setTimeout(() => {
+          container.classList.remove('brightness-150');
+        }, 120);
+      }
+    } else {
+      setPreview(b64);
+      onCapture(b64);
+      stopStreaming();
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,22 +257,31 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
     const reader = new FileReader();
     reader.onload = (loadEv) => {
       const result = loadEv.target?.result as string;
-      setPreview(result);
-      onCapture(result);
+      if (fluidMulti) {
+        onCapture(result);
+      } else {
+        setPreview(result);
+        onCapture(result);
+      }
     };
     reader.readAsDataURL(file);
   };
+
+  // When fluidMulti is true, we never render the local "preview" in the capture component itself,
+  // as the list of thumbnails is rendered directly below in the parent container layout.
+  const hasLocalPreview = !fluidMulti && preview;
 
   return (
     <div className="bg-slate-50 p-3 rounded-xl border border-gray-250/70 space-y-2.5">
       <div className="flex justify-between items-center select-none">
         <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{label}</span>
-        {preview && <span className="text-[10px] text-emerald-800 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-150">📷 CAPTURADA</span>}
+        {hasLocalPreview && <span className="text-[10px] text-emerald-800 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-150">📷 CAPTURADA</span>}
+        {fluidMulti && isCameraActive && <span className="text-[10px] text-indigo-800 font-extrabold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150 animate-pulse">🔴 EN VIVO</span>}
       </div>
 
-      {preview && (
+      {hasLocalPreview && (
         <div className="relative border border-gray-200 bg-neutral-900 rounded-lg overflow-hidden max-h-40 flex items-center justify-center">
-          <img src={preview} alt="Vista previa" className="max-h-40 object-contain text-[10px] text-white italic" referrerPolicy="no-referrer" />
+          <img src={preview!} alt="Vista previa" className="max-h-40 object-contain text-[10px] text-white italic" referrerPolicy="no-referrer" />
           <button
             type="button"
             onClick={() => {
@@ -269,7 +296,7 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
         </div>
       )}
 
-      {!preview && !isCameraActive && (
+      {!hasLocalPreview && !isCameraActive && (
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
             <button
@@ -294,23 +321,23 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
 
       {isCameraActive && (
         <div className="space-y-2.5">
-          <div className="relative bg-black rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+          <div className="relative bg-black rounded-lg overflow-hidden aspect-video flex items-center justify-center transition-all duration-75">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
           </div>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={snapPhoto}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer shadow-xs"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer shadow-xs uppercase tracking-wider"
             >
               Tomar Foto
             </button>
             <button
               type="button"
               onClick={stopStreaming}
-              className="bg-gray-300 hover:bg-gray-400 text-gray-800 text-xs font-bold py-2 px-3 rounded-lg transition-colors cursor-pointer"
+              className="bg-gray-300 hover:bg-gray-400 text-gray-800 text-xs font-bold py-2.5 px-3 rounded-lg transition-colors cursor-pointer"
             >
-              Cancelar
+              Cerrar Cámara
             </button>
           </div>
         </div>
@@ -360,27 +387,28 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
   // Diagnostic Checklist parts list
   const standardChecklistParts = [
-    'Motor - Aceite',
-    'Motor - Filtros',
-    'Motor - Bujías',
-    'Tren Motriz - Diferencial',
-    'Tren Motriz - Transmisión',
-    'Sistema de Frenos - Balatas',
-    'Sistema de Frenos - Discos',
-    'Suspensión',
-    'Amortiguadores',
-    'Sistema Eléctrico & Batería',
-    'Luces & Faros',
-    'Llantas - Presión de aire',
-    'Llantas - Desgaste',
-    'Niveles - Anticongelante',
-    'Niveles - Líquido de frenos',
-    'Bandas & Correas',
+    'Nivel de Aceite de Motor',
+    'Líquido de Dirección',
+    'Nivel de Anticongelante',
+    'Filtro de Aire',
+    'Líquido de Frenos',
+    'Filtro de Cabina',
+    'Batería (Voltaje/Terminales)',
+    'Bujías',
+    'Bandas de Motor',
     'Mangueras',
-    'Dirección',
-    'Alineación',
-    'Carrocería',
-    'Pintura'
+    'Rotación de llantas',
+    'Balatas Traseras',
+    'Suspensión (Bujes/Rótulas)',
+    'Fugas de Fluidos',
+    'Presión de Llantas',
+    'Alineación de llantas',
+    'Discos de Freno',
+    'Luces (Altas/Bajas/Stop)',
+    'Estado de Llantas (Desgaste)',
+    'Balatas Delanteras',
+    'Amortiguadores',
+    'Direccionales y Limpiaparabrisas'
   ];
   
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
@@ -1143,21 +1171,23 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
             <form onSubmit={submitRecepcion} className="p-6 space-y-5">
               
-              <div className="bg-slate-50 p-3 rounded-xl text-[11px] leading-relaxed select-text space-y-0.5">
-                <div>🚙 <strong>Vehículo:</strong> {selectedServiceForModal.vehicle} | Placas: <strong>{selectedServiceForModal.plate}</strong></div>
-                <div>👤 <strong>Cliente:</strong> {selectedServiceForModal.clientName} | Estatus: <span className="bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded uppercase text-[9px]">Paso {recepcionStep === 'fotos' ? '1/2: Fotos' : '2/2: Firma'}</span></div>
-              </div>
+              {recepcionStep !== 'fotos' && (
+                <div className="bg-slate-50 p-3 rounded-xl text-[11px] leading-relaxed select-text space-y-0.5">
+                  <div>🚙 <strong>Vehículo:</strong> {selectedServiceForModal.vehicle} | Placas: <strong>{selectedServiceForModal.plate}</strong></div>
+                  <div>👤 <strong>Cliente:</strong> {selectedServiceForModal.clientName} | Estatus: <span className="bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded uppercase text-[9px]">Paso {recepcionStep === 'fotos' ? '1/2: Fotos' : '2/2: Firma'}</span></div>
+                </div>
+              )}
 
               {recepcionStep === 'fotos' ? (
                 <div className="space-y-4">
                   <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl text-indigo-950 text-[10.5px] leading-relaxed">
                     <strong>Paso 1: Captura Técnica de Inventario</strong>
-                    <p className="text-gray-600 mt-0.5">Por favor, capture al menos <strong>6 fotografías</strong> que evidencien todo el contorno y el estado inicial del vehículo (Interiores, Frente, Kilometraje, Motor, Lados y Trasera).</p>
+                    <p className="text-gray-600 mt-0.5">Por favor, capture al menos <strong>6 fotografías</strong> que evidencien todo el contorno y el estado inicial del vehículo. Se ha optimizado para que las capture una tras otra de forma integrada y veloz.</p>
                   </div>
 
                   {/* Camera */}
                   <CameraCapture 
-                    label="Haga clic para iniciar la cámara u opción de archivo" 
+                    label="Lente de Captura Continuo (Tome fotos seguidas)" 
                     onCapture={(b64) => {
                       if (b64) {
                         setRecepcionFotos(prev => {
@@ -1167,7 +1197,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                         });
                       }
                     }}
-                    hideUpload={false}
+                    hideUpload={true}
+                    fluidMulti={true}
                   />
 
                   {/* Thumbnail lists */}
@@ -1200,7 +1231,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                             >
                               <X className="w-2.5 h-2.5" />
                             </button>
-                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[8px] font-bold px-1 py-0.2 rounded">
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[8px] font-bold px-1 py-0.2 rounded select-none">
                               F-{idx + 1}
                             </div>
                           </div>
@@ -1234,7 +1265,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="bg-emerald-50 border border-emerald-100 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5">
+                  <div className="bg-emerald-50 border border-emerald-100 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5 animate-fade-in">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>✓ Fotografía múltiple ({recepcionFotos.length} imágenes) registrada plenamente en caché de inventario.</span>
                   </div>
@@ -1245,6 +1276,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                     onSave={(b64) => setRecepcionFirmaCliente(b64)} 
                     onClear={() => setRecepcionFirmaCliente('')}
                     savedDataUrl={recepcionFirmaCliente}
+                    heightClass="h-56"
+                    heightAttr={260}
                   />
 
                   <div className="flex gap-3 pt-3">
@@ -1709,8 +1742,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2.5 font-medium leading-relaxed select-text">
-                  Calzada del Hueso #382, Col. Villa Lázaro Cárdenas, CDMX, C.P. 14370.<br/>
-                  Teléfono de Soporte: (55) 8372-9182 | Email: servicio@kioto.com.mx
+                  Dirección: Av Instituto Politécnico Nacional 1999, Lindavista Nte., Gustavo A. Madero, 07300 Ciudad de México, CDMX<br/>
+                  Teléfono: 5574897163 | Email: 118.coord.bdc@nissankioto.com.mx
                 </p>
               </div>
 
@@ -1725,13 +1758,13 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   Fecha Emisión: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 </p>
                 <div className="mt-2 text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150 uppercase tracking-widest select-none inline-block pb-1">
-                  Transacción: {printService.status.toUpperCase()}
+                  Estatus: {printService.status === 'entregado' ? 'Entregado' : printService.status.toUpperCase()}
                 </div>
               </div>
             </div>
 
             {/* Informative block: Cliente & Auto */}
-            <div className="bg-slate-50 border border-gray-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-6">
+            <div className="bg-slate-50 border border-gray-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-5">
               
               <div className="space-y-2">
                 <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1 flex items-center select-none">
@@ -1740,8 +1773,6 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <div className="text-xs space-y-1 text-gray-800">
                   <div><strong>Nombre del Cliente:</strong> <span className="font-semibold text-gray-950">{printService.clientName}</span></div>
                   <div><strong>Celular de Contacto:</strong> <span className="font-mono text-gray-950">{printService.clientPhone}</span></div>
-                  <div><strong>Canal de Enlace:</strong> <span className="uppercase font-bold text-gray-650 font-mono text-[9px]">{printService.source || 'asesor'}</span></div>
-                  <div><strong>Estatus de Notificación:</strong> <span className="text-emerald-800 font-extrabold text-[9px] uppercase">✓ Canalizado a WhatsApp</span></div>
                 </div>
               </div>
 
@@ -1749,7 +1780,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1 flex items-center select-none">
                   🚙 Ficha Técnica del Vehículo
                 </h4>
-                <div className="text-xs space-y-1 text-gray-800">
+                <div className="text-xs space-y-1 text-gray-850">
                   <div><strong>Ficha/Modelo:</strong> <span className="font-semibold text-gray-950">{printService.vehicle}</span></div>
                   <div><strong>Número de Placas:</strong> <span className="font-mono font-bold text-gray-950 bg-gray-100 rounded px-1">{printService.plate}</span></div>
                   <div><strong>NIV (Núm. Serie):</strong> <span className="font-mono text-gray-950">{printService.vin}</span></div>
@@ -1759,163 +1790,172 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
             </div>
 
-            {/* Diagnostic checklist */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
-              
-              {/* Checklist */}
-              <div className="md:col-span-6 space-y-3">
-                <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1 select-none">
-                  📋 Diagnóstico y Estado del Checklist Técnico
+            {/* Firma de Recepción del Cliente (Enseguida de los datos) */}
+            <div className="border border-gray-200 rounded-xl p-4 bg-slate-50/50 mb-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-left space-y-1">
+                <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase select-none">
+                  ✍️ Firma de Recepción de la Unidad
                 </h4>
-                
-                <div className="space-y-1.5 select-text">
-                  {standardChecklistParts.map((part) => {
-                    const isChecked = printService.checklist?.[part];
-                    return (
-                      <div key={part} className="flex items-center text-xs justify-between py-1 border-b border-gray-100 font-medium leading-tight">
-                        <span className="text-gray-700 text-[11px]">{part}</span>
-                        <div className="flex items-center space-x-1.5 shrink-0">
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                            isChecked 
-                              ? 'border-emerald-600 bg-emerald-50 text-emerald-700 font-black text-[11px]' 
-                              : 'border-slate-300 bg-white text-transparent text-[11px]'
-                          }`}>
-                            {isChecked ? '✓' : ''}
-                          </div>
-                          <span className={`text-[9px] font-extrabold uppercase tracking-wide tracking-tight ${isChecked ? 'text-emerald-800' : 'text-gray-400'}`}>
-                            {isChecked ? 'OK' : 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <p className="text-[10px] text-gray-500 leading-relaxed max-w-sm">
+                  Firma estampada por el cliente al ingresar el auto, autorizando el diagnóstico del checklist y avalando el inventario fotográfico inicial.
+                </p>
+              </div>
+              <div className="shrink-0 w-56 border border-dashed border-gray-300 p-2 rounded-lg bg-white text-center">
+                {printService.recepcionFirmaCliente ? (
+                  <div className="flex justify-center max-h-16">
+                    <img src={printService.recepcionFirmaCliente} alt="Firma Recepción" className="max-h-16 object-contain" referrerPolicy="no-referrer" />
+                  </div>
+                ) : (
+                  <div className="h-10 text-[9px] text-zinc-350 italic flex items-center justify-center font-mono">Pendiente</div>
+                )}
+                <div className="border-t border-slate-200 text-[9px] font-extrabold text-[#333] pt-1 mt-1 leading-none">
+                  {printService.clientName}
                 </div>
               </div>
-
-              {/* Remarks */}
-              <div className="md:col-span-6 flex flex-col justify-between space-y-4">
-                
-                <div className="bg-slate-50 border border-gray-200 p-4 rounded-xl space-y-2 flex-grow">
-                  <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1 select-none">
-                    ⚙️ Trabajos Desarrollados en Taller
-                  </h4>
-                  <p className="text-xs leading-relaxed text-gray-850 whitespace-pre-line italic font-serif">
-                    {printService.comentariosMecanico || "Sin observaciones o comentarios de taller registrados todavía."}
-                  </p>
-                </div>
-
-                <div className="bg-orange-50/50 border border-orange-150 p-4 rounded-xl space-y-2">
-                  <h4 className="text-[11px] font-black text-orange-800 tracking-widest uppercase border-b border-orange-200 pb-1 select-none">
-                    ⚠️ Recomendaciones de Seguridad Futura
-                  </h4>
-                  <p className="text-xs leading-relaxed text-orange-950 whitespace-pre-line font-medium">
-                    {printService.recomendacionesMecanico || "El vehículo se encuentra en condiciones mecánicas ideales. No requiere aditamentos preventivos de manera urgente."}
-                  </p>
-                </div>
-
-              </div>
-
             </div>
 
-            {/* Evidences (Reception & Delivery photos) */}
-            <div className="border-t border-gray-200 pt-6 mb-6 select-none grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              <div className="text-center bg-slate-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Evidencia Recepción</span>
-                {printService.recepcionFoto ? (
-                  (() => {
-                    let images: string[] = [];
-                    if (printService.recepcionFoto.startsWith('[')) {
-                      try {
-                        images = JSON.parse(printService.recepcionFoto);
-                      } catch (e) {
-                        images = [printService.recepcionFoto];
-                      }
-                    } else {
+            {/* Evidencia fotográfica de recepción (Ampliada y más visible!) */}
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50">
+              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
+                📸 Evidencia Fotográfica de Recepción (Inventario Detallado del Vehículo)
+              </h4>
+              {printService.recepcionFoto ? (
+                (() => {
+                  let images: string[] = [];
+                  if (printService.recepcionFoto.startsWith('[')) {
+                    try {
+                      images = JSON.parse(printService.recepcionFoto);
+                    } catch (e) {
                       images = [printService.recepcionFoto];
                     }
-                    return (
-                      <div className="grid grid-cols-3 gap-1 p-1 bg-white border border-slate-200 rounded max-h-36 overflow-hidden">
-                        {images.map((imgUrl, idx) => (
-                          <div key={idx} className="border border-slate-200 rounded overflow-hidden aspect-video bg-neutral-900 flex items-center justify-center">
-                            <img src={imgUrl} alt={`Recibido ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <div className="border border-gray-200 h-28 bg-gray-100 flex items-center justify-center text-[11px] text-gray-400 italic font-medium">
-                    No registrada
-                  </div>
-                )}
-              </div>
-
-              <div className="text-center bg-slate-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">INE/ID Frente</span>
-                {printService.deliveryFotoIdFront ? (
-                  <div className="border border-slate-250 bg-[#131315] max-h-36 rounded overflow-hidden flex items-center justify-center">
-                    <img src={printService.deliveryFotoIdFront} alt="ID Frente" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
-                  </div>
-                ) : (
-                  <div className="border border-gray-200 h-28 bg-gray-100 flex items-center justify-center text-[11px] text-gray-400 italic font-medium">
-                    No registrado
-                  </div>
-                )}
-              </div>
-
-              <div className="text-center bg-slate-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">INE/ID Reverso</span>
-                {printService.deliveryFotoIdBack ? (
-                  <div className="border border-slate-250 bg-[#131315] max-h-36 rounded overflow-hidden flex items-center justify-center">
-                    <img src={printService.deliveryFotoIdBack} alt="ID Reverso" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
-                  </div>
-                ) : (
-                  <div className="border border-gray-200 h-28 bg-gray-100 flex items-center justify-center text-[11px] text-gray-400 italic font-medium">
-                    No registrado
-                  </div>
-                )}
-              </div>
-
+                  } else {
+                    images = [printService.recepcionFoto];
+                  }
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {images.map((imgUrl, idx) => (
+                        <div key={idx} className="border border-slate-200 bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center shadow-sm">
+                          <img src={imgUrl} alt={`Recepción ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="border border-slate-200 py-10 bg-slate-100 flex items-center justify-center text-xs text-gray-400 italic rounded-xl">
+                  Ninguna fotografía de inventario registrada.
+                </div>
+              )}
             </div>
 
-            {/* Signature Block */}
-            <div className="border-t border-gray-200 pt-6 mb-6 select-none grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+            {/* Checklist Técnico acomodado a lo ancho de la hoja (3-Column Grid) */}
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs">
+              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
+                📋 Diagnóstico Completo y Checklist Técnico Vehicular
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 select-text text-xs">
+                {standardChecklistParts.map((part) => {
+                  const isChecked = printService.checklist?.[part];
+                  return (
+                    <div key={part} className="flex items-center text-[10.5px] justify-between py-1.5 border-b border-gray-100 font-medium leading-tight">
+                      <span className="text-gray-700">{part}</span>
+                      <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                          isChecked 
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700 font-extrabold text-[11px]' 
+                            : 'border-slate-300 bg-white text-transparent text-[11px]'
+                        }`}>
+                          {isChecked ? '✓' : ''}
+                        </div>
+                        <span className={`text-[9px] font-black uppercase tracking-wide tracking-tight shrink-0 ${isChecked ? 'text-emerald-800 font-black' : 'text-gray-400'}`}>
+                          {isChecked ? 'Atendido' : 'Excelente'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Trabajos desarrollados en taller (Sección debajo del checklist) */}
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50/50">
+              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-2.5 select-none">
+                ⚙️ Trabajos Desarrollados en Taller
+              </h4>
+              <div className="text-xs leading-relaxed text-gray-850 whitespace-pre-line font-medium italic min-h-[4rem] px-1 select-text">
+                {printService.comentariosMecanico || "Sin observaciones o bitácora de intervenciones mecánicas registrada."}
+              </div>
+            </div>
+
+            {/* Recomendaciones */}
+            <div className="border border-orange-200 rounded-xl p-5 mb-5 bg-orange-50/20">
+              <h4 className="text-[11px] font-black text-orange-800 tracking-widest uppercase border-b border-orange-200 pb-1.5 mb-2.5 select-none">
+                ⚠️ Recomendaciones de Seguridad Futura
+              </h4>
+              <div className="text-xs leading-relaxed text-orange-950 whitespace-pre-line font-semibold select-text">
+                {printService.recomendacionesMecanico || "El vehículo se encuentra en óptimas condiciones. Se recomienda programar su próximo chequeo en 5,000 km o 6 meses."}
+              </div>
+            </div>
+
+            {/* Fotografías de Identificación de Cliente (Frente y Reverso) */}
+            <div className="border border-gray-200 rounded-xl p-5 mb-6 bg-slate-50">
+              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-2 mb-4 select-none">
+                🪪 Fotografías de Identificación Oficial (Vigente para Entrega)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="text-center bg-white p-3 rounded-xl border border-gray-200 space-y-2">
+                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificación Oficial - Frente</span>
+                  {printService.deliveryFotoIdFront ? (
+                    <div className="border border-slate-200 bg-neutral-900 rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                      <img src={printService.deliveryFotoIdFront} alt="ID Frente" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
+                    </div>
+                  ) : (
+                    <div className="border border-gray-150 py-10 bg-gray-50 flex items-center justify-center text-[11px] text-gray-400 italic">No capturado</div>
+                  )}
+                </div>
+
+                <div className="text-center bg-white p-3 rounded-xl border border-gray-200 space-y-2">
+                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificación Oficial - Reverso</span>
+                  {printService.deliveryFotoIdBack ? (
+                    <div className="border border-slate-200 bg-neutral-900 rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                      <img src={printService.deliveryFotoIdBack} alt="ID Reverso" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
+                    </div>
+                  ) : (
+                    <div className="border border-gray-150 py-10 bg-gray-50 flex items-center justify-center text-[11px] text-gray-400 italic">No capturado</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Signatures of Client and Adviser */}
+            <div className="border-t border-gray-200 pt-5 mb-5 select-none grid grid-cols-2 gap-6 text-center">
               
-              <div className="space-y-2 bg-slate-50/50 p-3.5 rounded-xl border border-dashed border-slate-205">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight">Firma Recepción Cliente</span>
-                {printService.recepcionFirmaCliente ? (
-                  <div className="flex justify-center max-h-20 max-w-full">
-                    <img src={printService.recepcionFirmaCliente} alt="Firma Recibo" className="max-h-20 object-contain" referrerPolicy="no-referrer" />
-                  </div>
-                ) : (
-                  <div className="h-14 font-mono select-none text-[10px] text-zinc-350 italic flex items-center justify-center">Pendiente</div>
-                )}
-                <div className="border-t border-slate-350 text-[10px] font-extrabold text-[#333] pt-1 leading-none">{printService.clientName}</div>
-              </div>
-
-              <div className="space-y-2 bg-slate-50/50 p-3.5 rounded-xl border border-dashed border-slate-205">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight">Firma Entrega Asesor</span>
+              <div className="space-y-2 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-300">
+                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Firma Entrega Asesor</span>
                 {printService.deliveryFirmaAsesor ? (
-                  <div className="flex justify-center max-h-20 max-w-full">
-                    <img src={printService.deliveryFirmaAsesor} alt="Firma Asesor" className="max-h-20 object-contain" referrerPolicy="no-referrer" />
+                  <div className="flex justify-center max-h-16">
+                    <img src={printService.deliveryFirmaAsesor} alt="Firma Asesor" className="max-h-16 object-contain" referrerPolicy="no-referrer" />
                   </div>
                 ) : (
-                  <div className="h-14 font-mono select-none text-[10px] text-zinc-350 italic flex items-center justify-center">Pendiente</div>
+                  <div className="h-10 text-[9px] text-zinc-350 italic flex items-center justify-center font-mono">Pendiente</div>
                 )}
-                <div className="border-t border-slate-350 text-[10px] font-extrabold text-[#333] pt-1 leading-none">Asesor Técnico Kioto</div>
+                <div className="border-t border-slate-200 text-[9px] font-black text-[#333] pt-1 leading-none uppercase tracking-wide">
+                  Asesor de Servicio Técnico Kioto
+                </div>
               </div>
 
-              <div className="space-y-2 bg-slate-50/50 p-3.5 rounded-xl border border-dashed border-slate-205 col-span-1 lg:col-span-2">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-tight">Firma Liberación Cliente</span>
+              <div className="space-y-2 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-300">
+                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Firma Liberación Cliente</span>
                 {printService.deliveryFirmaCliente ? (
-                  <div className="flex justify-center max-h-20 max-w-full">
-                    <img src={printService.deliveryFirmaCliente} alt="Firma Entrega" className="max-h-20 object-contain" referrerPolicy="no-referrer" />
+                  <div className="flex justify-center max-h-16">
+                    <img src={printService.deliveryFirmaCliente} alt="Firma Liberación" className="max-h-16 object-contain" referrerPolicy="no-referrer" />
                   </div>
                 ) : (
-                  <div className="h-14 font-mono select-none text-[10px] text-zinc-350 italic flex items-center justify-center">Pendiente</div>
+                  <div className="h-10 text-[9px] text-zinc-350 italic flex items-center justify-center font-mono">Pendiente</div>
                 )}
-                <div className="border-t border-slate-350 text-[10px] font-extrabold text-[#333] pt-1 leading-none">Propietario / Representante Legal</div>
+                <div className="border-t border-slate-200 text-[9px] font-black text-[#333] pt-1 leading-none uppercase tracking-wide">
+                  Propietario / Representante Legal
+                </div>
               </div>
 
             </div>

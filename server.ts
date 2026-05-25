@@ -858,19 +858,19 @@ app.post("/api/ai/validate-id", async (req, res) => {
       });
     }
 
-    const prompt = `Analiza detalladamente esta fotografía e identifica si corresponde a una identificación oficial válida mexicana de alguno de los siguientes tipos:
-1. INE (Credencial para votar del Instituto Nacional Electoral o Instituto Federal Electoral)
-2. Licencia de conducir (vigente de cualquier estado de México)
-3. Cédula profesional (con fotografía)
-4. Cartilla del servicio militar nacional
-
-Es indispensable que confirmes que la imagen contenga elementos visuales, logotipos o firmas característicos de este tipo de documentos correspondientes al lado de la identificación analizado (frente o reverso).
+    const prompt = `Analiza con el MÁXIMO RIGOR posible esta fotografía. Determina con total seguridad si corresponde a una identificación oficial mexicana real y legible (de alguno de estos tipos: INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
+Para ser marcada como válida (isValid: true), la imagen DEBE cumplir estrictamente con lo siguiente:
+1. Es obligatorio que sea una identificación de identidad oficial, no una foto de un mueble, sillón, pared, piso, taza, computadora, mano, llaves, animales, personas sin documento o fondo genérico. Debe mostrar los bordes, formas y estructura de una tarjeta de ID o documento oficial.
+2. Debe contener logotipos oficiales, escudos nacionales, leyendas gubernamentales visibles o firmas oficiales correspondientes al lado analizado (frente o reverso).
+3. Si el "side" es "front", debe mostrarse claramente la fotografía del rostro del titular y datos de texto legibles.
+4. Si el "side" es "back", debe mostrarse la firma autógrafa, banda magnética, códigos de barra, o un patrón característico del reverso de un ID.
+Si tomaste una foto de cualquier otra cosa (muebles, piso, objetos irrelevantes, etc.), debes responder con isValid: false, idType: "Desconocido", y detallar en el mensaje por qué fue rechazada (ej. "La imagen muestra un objeto o fondo genérico y no una identificación oficial").
 
 Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes propiedades:
-- isValid: (Booleano) true si y solo si detectas plenamente que es uno de los 4 tipos de identificaciones permitidas de acuerdo a lo planteado.
+- isValid: (Booleano) true si y solo si detectas plenamente que es uno de los 4 tipos de identificaciones oficiales vigentes vigibles y legibles.
 - idType: (Cadena) "INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar" o "Desconocido".
 - confidence: (Número de 0 a 1) nivel de confianza de la clasificación.
-- message: (Cadena) Explicación del diagnóstico que justifique tu clasificación en español (ej. "INE frente detectada correctamente con fotografía y escudo nacional visible").`;
+- message: (Cadena) Explicación detallada del diagnóstico en español.`;
 
     const response = await client.models.generateContent({
       model: "gemini-3.5-flash",
