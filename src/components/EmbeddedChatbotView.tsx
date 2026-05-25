@@ -15,9 +15,15 @@ import {
   Info
 } from 'lucide-react';
 import { ChatMessage, ChatSession, SimulatedNotification } from '../types';
+import KiotoLogo from './KiotoLogo';
 
 export default function EmbeddedChatbotView() {
   const [platform, setPlatform] = useState<'whatsapp' | 'facebook'>('whatsapp');
+
+  const isChannelEnabled = platform === 'whatsapp'
+    ? (localStorage.getItem('kioto_chatbot_whatsapp') !== 'false')
+    : (localStorage.getItem('kioto_chatbot_messenger') !== 'false');
+
   const [clientName, setClientName] = useState<string>(() => localStorage.getItem('kioto_chat_name') || 'Invitado Taller');
   const [clientPhone, setClientPhone] = useState<string>(() => {
     let p = localStorage.getItem('kioto_chat_phone');
@@ -181,8 +187,8 @@ export default function EmbeddedChatbotView() {
         {/* Header Block exactly styled like original chat layout */}
         <div className="bg-neutral-950 text-white px-4 py-4 flex items-center justify-between shrink-0 shadow-md">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-white">
-              <Bot className="w-5 h-5" />
+            <div className="bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-xl border border-white/10 flex items-center justify-center">
+              <KiotoLogo className="h-[19px] w-auto" fill="#FFFFFF" />
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-tight text-gray-100">Asistente Kioto</h1>
@@ -280,24 +286,31 @@ export default function EmbeddedChatbotView() {
         </div>
 
         {/* Input box */}
-        <form onSubmit={handleSendMessage} className="bg-white border-t border-gray-200 p-3 flex items-center space-x-2 shrink-0">
-          <input
-            ref={inputRef}
-            type="text"
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            placeholder="Escribe tu respuesta..."
-            className="flex-1 bg-gray-100 border border-gray-200 focus:bg-white rounded-full py-2.5 px-4 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-gray-950 transition-colors"
-            disabled={loading || !activeSession}
-          />
-          <button
-            type="submit"
-            disabled={loading || !activeSession || !messageText.trim()}
-            className="p-2.5 rounded-full bg-neutral-950 text-white transition-opacity disabled:opacity-45 shrink-0 cursor-pointer hover:bg-neutral-800"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
+        {!isChannelEnabled ? (
+          <div className="bg-amber-50 border-t border-amber-200 p-3.5 text-center text-[11px] text-amber-800 font-bold select-none shrink-0 flex flex-col items-center justify-center space-y-1">
+            <span>⚠️ Canal Apagado y Desactivado por Administración</span>
+            <span className="text-[9px] font-normal text-amber-600">El chatbot inteligente para este canal de atención está deshabilitado.</span>
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="bg-white border-t border-gray-200 p-3 flex items-center space-x-2 shrink-0">
+            <input
+              ref={inputRef}
+              type="text"
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              placeholder="Escribe tu respuesta..."
+              className="flex-1 bg-gray-100 border border-gray-200 focus:bg-white rounded-full py-2.5 px-4 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-gray-950 transition-colors"
+              disabled={loading || !activeSession}
+            />
+            <button
+              type="submit"
+              disabled={loading || !activeSession || !messageText.trim()}
+              className="p-2.5 rounded-full bg-neutral-950 text-white transition-opacity disabled:opacity-45 shrink-0 cursor-pointer hover:bg-neutral-800"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

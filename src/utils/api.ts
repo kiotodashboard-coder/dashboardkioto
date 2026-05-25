@@ -15,7 +15,7 @@ const firebaseApp = initializeApp(firebaseConfig);
 export const dbClient = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 const DEFAULT_USERS = [
-  { id: "u-admin", username: "mi_yorch@hotmail.com", password: "qwerty1", role: "Admin", name: "Jorge Administrador", isFirstLogin: false, createdAt: new Date().toISOString() }
+  { id: "u-admin", username: "ejemplo@kioto.com", password: "qwerty1", role: "Admin", name: "Jorge Administrador", isFirstLogin: false, createdAt: new Date().toISOString() }
 ];
 
 const INITIAL_SERVICIOS = [
@@ -441,7 +441,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
   if (url === "/api/auth/login" && method === "POST") {
     try {
       const { username, password } = body;
-      if (username === "mi_yorch@hotmail.com" && password === "qwerty1") {
+      if (username === "ejemplo@kioto.com" && password === "qwerty1") {
         return new MockResponse({
           success: true,
           user: DEFAULT_USERS[0]

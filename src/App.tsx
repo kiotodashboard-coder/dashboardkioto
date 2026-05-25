@@ -28,7 +28,8 @@ import {
   ChevronRight,
   Settings,
   Mail,
-  ArrowLeft
+  ArrowLeft,
+  Bot
 } from 'lucide-react';
 import { User as UserType, ServicioMecanico } from './types';
 import { customFetch } from './utils/api';
@@ -40,6 +41,7 @@ import ProgramacionForm from './components/ProgramacionForm';
 import DashboardOverview from './components/DashboardOverview';
 import AiCodeCoPilot from './components/AiCodeCoPilot';
 import EmbeddedChatbotView from './components/EmbeddedChatbotView';
+import KiotoLogo from './components/KiotoLogo';
 
 export default function App() {
   const isEmbeddedChatbot = typeof window !== 'undefined' && (
@@ -56,8 +58,28 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
   const [loginStep, setLoginStep] = useState<'email' | 'password' | 'set_password'>('email');
-  const [loginUsername, setLoginUsername] = useState<string>('mi_yorch@hotmail.com');
-  const [loginPassword, setLoginPassword] = useState<string>('qwerty1');
+  const [loginUsername, setLoginUsername] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+
+  const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_web') !== 'false');
+  const [isWhatsAppChatbotEnabled, setIsWhatsAppChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_whatsapp') !== 'false');
+  const [isMessengerChatbotEnabled, setIsMessengerChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_messenger') !== 'false');
+
+  const handleToggleWebChatbot = () => {
+    const newVal = !isWebChatbotEnabled;
+    setIsWebChatbotEnabled(newVal);
+    localStorage.setItem('kioto_chatbot_web', String(newVal));
+  };
+  const handleToggleWhatsAppChatbot = () => {
+    const newVal = !isWhatsAppChatbotEnabled;
+    setIsWhatsAppChatbotEnabled(newVal);
+    localStorage.setItem('kioto_chatbot_whatsapp', String(newVal));
+  };
+  const handleToggleMessengerChatbot = () => {
+    const newVal = !isMessengerChatbotEnabled;
+    setIsMessengerChatbotEnabled(newVal);
+    localStorage.setItem('kioto_chatbot_messenger', String(newVal));
+  };
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
   const [emailDetails, setEmailDetails] = useState<{ name: string; role: string } | null>(null);
@@ -233,7 +255,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setLoginUsername('mi_yorch@hotmail.com');
+    setLoginUsername('');
     setLoginPassword('');
     setNewPassword('');
     setConfirmNewPassword('');
@@ -278,16 +300,16 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 shrink-0 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           
-          {/* Left Block: Logo K and Title */}
-          <div className="flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-neutral-950 flex items-center justify-center text-white font-sans shadow-xs cursor-default hover:bg-neutral-900 transition-colors">
-              <span className="text-xl font-black">K</span>
+          {/* Left Block: Logo Kioto SVG and Title */}
+          <div className="flex items-center space-x-3">
+            <div className="bg-slate-50/50 border border-slate-200/50 hover:border-slate-300 hover:bg-white rounded-xl px-3 py-1.5 flex items-center justify-center shadow-3xs transition-all">
+              <KiotoLogo className="h-6 w-auto" />
             </div>
             <div>
-              <h1 className="text-md font-bold text-gray-900 tracking-tight leading-none mb-1">
-                Kioto Dashboard
+              <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none mb-1 uppercase">
+                Kioto Motors
               </h1>
-              <p className="text-[10px] font-bold tracking-widest text-gray-400 uppercase leading-none">
+              <p className="text-[9px] font-bold tracking-widest text-gray-400 uppercase leading-none">
                 {currentUser ? `PANEL DE ${currentUser.role === 'Admin' ? 'ADMIN' : currentUser.role.toUpperCase()}` : 'ACCESO SEGURO'}
               </p>
             </div>
@@ -303,7 +325,7 @@ export default function App() {
                   <span>
                     {currentUser.username.includes('@') 
                       ? currentUser.username 
-                      : (currentUser.role === 'Admin' ? 'jorge.villanueva@boletomovil.com' : `${currentUser.username.toLowerCase()}@boletomovil.com`)}
+                      : (currentUser.role === 'Admin' ? 'ejemplo@kioto.com' : `${currentUser.username.toLowerCase()}@kioto.com`)}
                   </span>
                 </div>
 
@@ -333,13 +355,20 @@ export default function App() {
       )}
 
       {/* CONTENT AREA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
         
         {!currentUser ? (
           /* LOGIN SCREEN VIEW (With removed header, removed shortcuts, and two-step flow) */
           <div id="login-container" className="max-w-md mx-auto my-12 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
             <div className="p-6 space-y-6">
               
+              <div className="flex flex-col items-center justify-center border-b border-gray-100 pb-5">
+                <div className="bg-slate-50 mb-2.5 px-4 py-2 border border-slate-200/50 rounded-xl">
+                  <KiotoLogo className="h-8 w-auto" />
+                </div>
+                <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Panel de Control Central</h2>
+              </div>
+
               {authError && (
                 <div className="bg-rose-50 border border-rose-200 text-rose-900 p-3 rounded-lg text-xs flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -367,7 +396,7 @@ export default function App() {
                         value={loginUsername}
                         onChange={(e) => setLoginUsername(e.target.value)}
                         className="w-full bg-gray-50 border border-gray-200 text-gray-950 placeholder-gray-400 rounded-xl py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gray-600 focus:bg-white transition-all"
-                        placeholder="usuario@hotmail.com o boletos"
+                        placeholder="ejemplo@kioto.com"
                         required
                       />
                     </div>
@@ -716,6 +745,72 @@ export default function App() {
               {activeTab === 'config' && currentUser.role === 'Admin' && (
                 <div className="space-y-6">
 
+                  {/* CHATBOT IA CONFIGURATION TOGGLES CARD */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 animate-fade-in shadow-xs">
+                    <div>
+                      <h3 className="text-md font-bold text-gray-900 flex items-center">
+                        <Bot className="w-5 h-5 text-gray-800 mr-2" />
+                        Interruptores de Activación del Chatbot Inteligente IA
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Habilite o deshabilite de inmediato y por separado el asistente inteligente para cada canal de atención.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                      {/* Web Switch */}
+                      <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl">
+                        <div className="space-y-0.5 pr-2">
+                          <span className="text-xs font-bold text-gray-950 block">Chatbot de la Página Web</span>
+                          <span className="text-[10px] text-gray-400 block">Widget flotante en el sistema</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleToggleWebChatbot}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isWebChatbotEnabled ? 'bg-neutral-900' : 'bg-gray-200'}`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${isWebChatbotEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* WhatsApp Switch */}
+                      <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl">
+                        <div className="space-y-0.5 pr-2">
+                          <span className="text-xs font-bold text-gray-950 block">Chatbot de WhatsApp</span>
+                          <span className="text-[10px] text-gray-400 block">Atención en WhatsApp Business</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleToggleWhatsAppChatbot}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isWhatsAppChatbotEnabled ? 'bg-emerald-600' : 'bg-gray-200'}`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${isWhatsAppChatbotEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Messenger Switch */}
+                      <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/60 rounded-xl">
+                        <div className="space-y-0.5 pr-2">
+                          <span className="text-xs font-bold text-gray-950 block">Chatbot de Messenger</span>
+                          <span className="text-[10px] text-gray-400 block">Respuestas en la Fanpage oficial</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleToggleMessengerChatbot}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isMessengerChatbotEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${isMessengerChatbotEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 animate-fade-in">
                     <div>
                       <h3 className="text-md font-bold text-gray-900 flex items-center">
@@ -920,7 +1015,7 @@ export default function App() {
       </main>
 
       {/* Floating Chatbot Widget */}
-      <FloatingChatbot onAppointmentBooked={loadDashboardData} />
+      {isWebChatbotEnabled && <FloatingChatbot onAppointmentBooked={loadDashboardData} />}
 
       {/* FOOTER */}
       <footer className="bg-white border-t border-gray-200 py-6 text-center text-xs text-gray-400 mt-12 shrink-0">

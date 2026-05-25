@@ -404,7 +404,7 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
             </div>
           </div>
 
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-4">
             <div className="bg-zinc-900 p-4 rounded-xl text-center border border-zinc-800">
               <span className="w-3 h-3 bg-amber-500 rounded-full inline-block mb-1" />
               <p className="text-[10px] text-zinc-400 font-bold uppercase">Agendados</p>
@@ -789,7 +789,7 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
               <p className="text-[11px] text-gray-500">Volumen de vehículos en cada etapa del proceso técnico.</p>
             </div>
 
-            <div className="grid grid-cols-5 gap-1.5 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
               <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-2 text-center flex flex-col justify-between">
                 <span className="text-[8px] font-black uppercase text-amber-800 tracking-wider block">Agendado</span>
                 <span className="text-base font-black text-amber-950 mt-1 block">{countAgendado}</span>

@@ -16,6 +16,7 @@ import {
   Bot
 } from 'lucide-react';
 import { ChatMessage, ChatSession, SimulatedNotification } from '../types';
+import KiotoLogo from './KiotoLogo';
 
 // Keep cached chatbot state to persist conversation history across page refreshes
 
@@ -221,11 +222,11 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
           {/* Header */}
           <div className="bg-gray-950 text-white px-4 py-3.5 flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-white" />
+              <div className="bg-white/10 hover:bg-white/15 px-2.5 py-1 rounded-lg border border-white/10 flex items-center justify-center">
+                <KiotoLogo className="h-4 w-auto" fill="#FFFFFF" />
               </div>
               <div>
-                <h4 className="text-xs font-bold tracking-wide">Asistente Kioto</h4>
+                <h4 className="text-[11px] font-black tracking-wider uppercase">Asistente Kioto</h4>
               </div>
             </div>
             

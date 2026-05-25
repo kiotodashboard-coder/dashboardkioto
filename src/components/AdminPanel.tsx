@@ -207,7 +207,7 @@ export default function AdminPanel({ onUsersChanged }: AdminPanelProps) {
                   id="admin-user-full-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ej. Jorge Villanueva"
+                  placeholder="Ej. Nombre Completo"
                   className="w-full bg-white border border-gray-200 text-gray-950 placeholder-gray-400 rounded-lg py-2.5 px-3 text-xs focus:ring-1 focus:ring-gray-800 focus:outline-none transition-all"
                   required
                 />

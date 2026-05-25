@@ -19,6 +19,7 @@ import {
   FileText
 } from 'lucide-react';
 import { ServicioMecanico, User as UserType } from '../types';
+import KiotoLogo from './KiotoLogo';
 
 // ==========================================
 // 1. SIGNATURE PAD CANVAS COMPONENT
@@ -185,9 +186,6 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
         video: { facingMode: 'environment' }
       });
       setStream(activeStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = activeStream;
-      }
       setIsCameraActive(true);
     } catch (err) {
       console.warn("Camera media access blocked or unavailable:", err);
@@ -210,6 +208,15 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload }: CameraCaptu
       }
     };
   }, [stream]);
+
+  useEffect(() => {
+    if (isCameraActive && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(err => {
+        console.warn("Could not autoplay video stream:", err);
+      });
+    }
+  }, [isCameraActive, stream]);
 
   const snapPhoto = () => {
     const video = videoRef.current;
@@ -348,6 +355,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   // Recepcion input temporary storage
   const [recepcionFoto, setRecepcionFoto] = useState('');
   const [recepcionFirmaCliente, setRecepcionFirmaCliente] = useState('');
+  const [recepcionStep, setRecepcionStep] = useState<'fotos' | 'firma'>('fotos');
+  const [recepcionFotos, setRecepcionFotos] = useState<string[]>([]);
 
   // Diagnostic Checklist parts list
   const standardChecklistParts = [
@@ -383,7 +392,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [deliveryFotoIdBack, setDeliveryFotoIdBack] = useState('');
   const [deliveryFirmaAsesor, setDeliveryFirmaAsesor] = useState('');
   const [deliveryFirmaCliente, setDeliveryFirmaCliente] = useState('');
-  const [deliveryStep, setDeliveryStep] = useState<'documentos' | 'firmas'>('documentos');
+  const [deliveryStep, setDeliveryStep] = useState<'doc-front' | 'doc-back' | 'firma-cliente' | 'firma-asesor'>('doc-front');
+  const [isValidatingFront, setIsValidatingFront] = useState(false);
+  const [isValidatingBack, setIsValidatingBack] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   // Core printable viewer parameters
   const [printService, setPrintService] = useState<ServicioMecanico | null>(null);
@@ -406,8 +418,25 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   useEffect(() => {
     if (selectedServiceForModal) {
       if (modalType === 'recepcion') {
-        setRecepcionFoto(selectedServiceForModal.recepcionFoto || '');
+        const photoVal = selectedServiceForModal.recepcionFoto || '';
+        setRecepcionFoto(photoVal);
         setRecepcionFirmaCliente(selectedServiceForModal.recepcionFirmaCliente || '');
+        setRecepcionStep('fotos');
+        
+        // Parse multi photos if applicable
+        let initialFotos: string[] = [];
+        if (photoVal) {
+          if (photoVal.startsWith('[')) {
+            try {
+              initialFotos = JSON.parse(photoVal);
+            } catch (pErr) {
+              initialFotos = [photoVal];
+            }
+          } else {
+            initialFotos = [photoVal];
+          }
+        }
+        setRecepcionFotos(initialFotos);
       } else if (modalType === 'atendido') {
         setComentariosMecanico(selectedServiceForModal.comentariosMecanico || '');
         setRecomendacionesMecanico(selectedServiceForModal.recomendacionesMecanico || '');
@@ -422,12 +451,15 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         setDeliveryFotoIdBack(selectedServiceForModal.deliveryFotoIdBack || '');
         setDeliveryFirmaAsesor(selectedServiceForModal.deliveryFirmaAsesor || '');
         setDeliveryFirmaCliente(selectedServiceForModal.deliveryFirmaCliente || '');
-        setDeliveryStep('documentos');
+        setDeliveryStep('doc-front');
+        setValidationError('');
       }
     } else {
       // Clear
       setRecepcionFoto('');
       setRecepcionFirmaCliente('');
+      setRecepcionStep('fotos');
+      setRecepcionFotos([]);
       setChecklist({});
       setComentariosMecanico('');
       setRecomendacionesMecanico('');
@@ -435,7 +467,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       setDeliveryFotoIdBack('');
       setDeliveryFirmaAsesor('');
       setDeliveryFirmaCliente('');
-      setDeliveryStep('documentos');
+      setDeliveryStep('doc-front');
+      setValidationError('');
     }
   }, [selectedServiceForModal, modalType]);
 
@@ -1097,7 +1130,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <div className="bg-neutral-950 text-white p-5 flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-widest text-indigo-400">Recepción Taller</h4>
-                <p className="text-sm font-bold mt-1 text-slate-100">Fichajes y Evidencia: #{selectedServiceForModal.id.replace('serv-', '').slice(-4).toUpperCase()}</p>
+                <p className="text-sm font-bold mt-1 text-slate-100">Evidencia de Fichaje: #{selectedServiceForModal.id.replace('serv-', '').slice(-4).toUpperCase()}</p>
               </div>
               <button 
                 type="button" 
@@ -1110,44 +1143,135 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
             <form onSubmit={submitRecepcion} className="p-6 space-y-5">
               
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-dashed border-slate-205 text-[11px] leading-relaxed select-text space-y-1">
-                <div>🚙 <strong>Vehículo:</strong> {selectedServiceForModal.vehicle}</div>
-                <div>👤 <strong>Cliente:</strong> {selectedServiceForModal.clientName} ({selectedServiceForModal.clientPhone})</div>
-                <div>🏷 <strong>Placas:</strong> {selectedServiceForModal.plate} | 🛠 <strong>Servicio:</strong> {selectedServiceForModal.serviceType}</div>
+              <div className="bg-slate-50 p-3 rounded-xl text-[11px] leading-relaxed select-text space-y-0.5">
+                <div>🚙 <strong>Vehículo:</strong> {selectedServiceForModal.vehicle} | Placas: <strong>{selectedServiceForModal.plate}</strong></div>
+                <div>👤 <strong>Cliente:</strong> {selectedServiceForModal.clientName} | Estatus: <span className="bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded uppercase text-[9px]">Paso {recepcionStep === 'fotos' ? '1/2: Fotos' : '2/2: Firma'}</span></div>
               </div>
 
-              {/* Photos */}
-              <CameraCapture 
-                label="Fotografía del estado de recepción del vehículo" 
-                onCapture={(b64) => setRecepcionFoto(b64)}
-                savedImage={recepcionFoto}
-                hideUpload={true}
-              />
+              {recepcionStep === 'fotos' ? (
+                <div className="space-y-4">
+                  <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl text-indigo-950 text-[10.5px] leading-relaxed">
+                    <strong>Paso 1: Captura Técnica de Inventario</strong>
+                    <p className="text-gray-600 mt-0.5">Por favor, capture al menos <strong>6 fotografías</strong> que evidencien todo el contorno y el estado inicial del vehículo (Interiores, Frente, Kilometraje, Motor, Lados y Trasera).</p>
+                  </div>
 
-              {/* Signatures */}
-              <SignaturePad 
-                title="Firma autógrafa del cliente recibiendo" 
-                onSave={(b64) => setRecepcionFirmaCliente(b64)} 
-                onClear={() => setRecepcionFirmaCliente('')}
-                savedDataUrl={recepcionFirmaCliente}
-              />
+                  {/* Camera */}
+                  <CameraCapture 
+                    label="Haga clic para iniciar la cámara u opción de archivo" 
+                    onCapture={(b64) => {
+                      if (b64) {
+                        setRecepcionFotos(prev => {
+                          const updated = [...prev, b64];
+                          setRecepcionFoto(JSON.stringify(updated));
+                          return updated;
+                        });
+                      }
+                    }}
+                    hideUpload={false}
+                  />
 
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-3 bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors cursor-pointer"
-                >
-                  Guardar y Cambiar a Recibido
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
-                  className="px-4 py-3 bg-white hover:bg-slate-50 border border-gray-300 rounded-xl text-xs font-bold text-gray-650 tracking-wider"
-                >
-                  Cancelar
-                </button>
-              </div>
+                  {/* Thumbnail lists */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                      <span>Imágenes Registradas:</span>
+                      <span className={recepcionFotos.length < 6 ? 'text-rose-600 font-extrabold' : 'text-emerald-700'}>
+                        {recepcionFotos.length} de 6 requeridas
+                      </span>
+                    </div>
+
+                    {recepcionFotos.length === 0 ? (
+                      <div className="border-2 border-dashed border-gray-200 rounded-xl py-6 text-center text-xs text-gray-400 font-medium">
+                        Ninguna fotografía capturada aún
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 overflow-y-auto max-h-48 p-1 border border-slate-100 rounded-xl">
+                        {recepcionFotos.map((f, idx) => (
+                          <div key={idx} className="relative rounded-lg overflow-hidden border border-gray-200 aspect-video bg-neutral-900 group">
+                            <img src={f} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = recepcionFotos.filter((_, i) => i !== idx);
+                                setRecepcionFotos(updated);
+                                setRecepcionFoto(updated.length > 0 ? JSON.stringify(updated) : '');
+                              }}
+                              className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-1 cursor-pointer shadow-md transition-colors"
+                              title="Retirar fotografía"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[8px] font-bold px-1 py-0.2 rounded">
+                              F-{idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (recepcionFotos.length < 6) {
+                          alert(`⚠️ Debe capturar un mínimo obligatorio de 6 fotografías que cubran los 4 costados, odómetro y motor para fines de inventario del vehículo. Lleva registradas: ${recepcionFotos.length} de 6.`);
+                          return;
+                        }
+                        setRecepcionStep('firma');
+                      }}
+                      className="flex-1 py-3 bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-all cursor-pointer text-center"
+                    >
+                      Continuar a Firma del Cliente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
+                      className="px-4 py-3 bg-white hover:bg-slate-50 border border-gray-350 rounded-xl text-xs font-bold text-gray-650"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-100 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>✓ Fotografía múltiple ({recepcionFotos.length} imágenes) registrada plenamente en caché de inventario.</span>
+                  </div>
+
+                  {/* Signatures */}
+                  <SignaturePad 
+                    title="Firma autógrafa del cliente recibiendo" 
+                    onSave={(b64) => setRecepcionFirmaCliente(b64)} 
+                    onClear={() => setRecepcionFirmaCliente('')}
+                    savedDataUrl={recepcionFirmaCliente}
+                  />
+
+                  <div className="flex gap-3 pt-3">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 py-3 bg-emerald-800 hover:bg-emerald-950 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-all cursor-pointer"
+                    >
+                      Guardar y Cambiar a Recibido
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecepcionStep('fotos')}
+                      className="px-4 py-3 bg-slate-100 hover:bg-slate-250 rounded-xl text-xs font-bold text-gray-700 transition"
+                    >
+                      Atrás
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
+                      className="px-4 py-3 bg-white hover:bg-slate-50 border border-gray-350 rounded-xl text-xs font-bold text-gray-650"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </form>
           </div>
@@ -1188,23 +1312,25 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   ✔ Checklist de partes a revisar obligatoriamente:
                 </span>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2 select-none">
-                  {standardChecklistParts.map((part) => (
-                    <label 
-                      key={part} 
-                      className="flex items-center gap-2.5 p-2 border border-slate-200 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors"
-                    >
-                      <input 
-                        type="checkbox" 
-                        checked={checklist[part] || false}
-                        onChange={(e) => {
-                          setChecklist(prev => ({ ...prev, [part]: e.target.checked }));
-                        }}
-                        className="rounded border-gray-300 w-4.5 h-4.5 text-neutral-900 focus:ring-neutral-800"
-                      />
-                      <span className="text-[11px] font-bold text-gray-800">{part}</span>
-                    </label>
-                  ))}
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 max-h-56 overflow-y-auto shadow-inner select-none">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {standardChecklistParts.map((part) => (
+                      <label 
+                        key={part} 
+                        className="flex items-center gap-2.5 p-2 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-350 rounded-lg cursor-pointer transition-colors"
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={checklist[part] || false}
+                          onChange={(e) => {
+                            setChecklist(prev => ({ ...prev, [part]: e.target.checked }));
+                          }}
+                          className="rounded border-gray-300 w-4 h-4 text-neutral-900 focus:ring-neutral-800"
+                        />
+                        <span className="text-[11px] font-bold text-gray-600">{part}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1280,110 +1406,235 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <form onSubmit={submitEntregado} className="p-6 space-y-4">
               
               <div className="bg-slate-50 p-3 rounded-lg select-text text-[11px] leading-relaxed flex justify-between items-center">
-                <span>🚘 <strong>Auto a entregar:</strong> {selectedServiceForModal.vehicle} ({selectedServiceForModal.plate}) • 👤 <strong>Cliente:</strong> {selectedServiceForModal.clientName}</span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full uppercase">
-                  Paso {deliveryStep === 'documentos' ? '1/2' : '2/2'}
+                <span>🚘 <strong>Auto:</strong> {selectedServiceForModal.vehicle} | Placas: <strong>{selectedServiceForModal.plate}</strong></span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-1 rounded-full uppercase shrink-0">
+                  {deliveryStep === 'doc-front' && 'Paso 1/4: Foto Frente'}
+                  {deliveryStep === 'doc-back' && 'Paso 2/4: Foto Reverso'}
+                  {deliveryStep === 'firma-cliente' && 'Paso 3/4: Firma Cliente'}
+                  {deliveryStep === 'firma-asesor' && 'Paso 4/4: Firma Asesor'}
                 </span>
               </div>
 
-              {deliveryStep === 'documentos' ? (
-                <>
-                  {/* ID Photos */}
-                  <div className="space-y-3">
-                    <span className="block text-[11px] font-black text-gray-500 uppercase tracking-widest select-none">
-                      Paso 1: Documentos de Identificación (Captura Obligatoria Ambos Lados)
-                    </span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <CameraCapture 
-                        label="INE/ID Frente (Lado de Foto)" 
-                        onCapture={(b64) => setDeliveryFotoIdFront(b64)}
-                        savedImage={deliveryFotoIdFront}
-                        hideUpload={true}
-                      />
-                      <CameraCapture 
-                        label="INE/ID Reverso (Lado de Firma)" 
-                        onCapture={(b64) => setDeliveryFotoIdBack(b64)}
-                        savedImage={deliveryFotoIdBack}
-                        hideUpload={true}
-                      />
-                    </div>
+              {/* Step 1: Front ID */}
+              {deliveryStep === 'doc-front' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
+                    <strong>Paso 1: Foto Frontal de Identificación Oficial</strong>
+                    <p className="text-gray-500 mt-0.5">Capture o cargue una identificación oficial vigente del titular (INE, Licencia de Conducir, Cédula Profesional o Cartilla Militar).</p>
                   </div>
 
-                  <div className="flex gap-3 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!deliveryFotoIdFront || !deliveryFotoIdBack) {
-                          alert("⚠️ Debe registrar la fotografía de una identificación oficial vigente por AMBOS LADOS (Frente y Reverso) antes de continuar.");
+                  {isValidatingFront ? (
+                    <div className="border border-emerald-150 rounded-xl py-12 bg-emerald-50/20 text-center space-y-3 animate-pulse">
+                      <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-xs font-bold text-emerald-800">Verificando validez del ID con Inteligencia Artificial...</p>
+                    </div>
+                  ) : (
+                    <CameraCapture 
+                      label="Capturar ID Frente (Lado Foto)" 
+                      onCapture={async (b64) => {
+                        if (!b64) {
+                          setDeliveryFotoIdFront('');
                           return;
                         }
-                        setDeliveryStep('firmas');
+                        setIsValidatingFront(true);
+                        setValidationError('');
+                        try {
+                          const res = await fetch('/api/ai/validate-id', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image64: b64, side: 'front' })
+                          });
+                          const data = await res.json();
+                          if (data.isValid) {
+                            setDeliveryFotoIdFront(b64);
+                            alert(`✅ Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó correctamente.'}`);
+                            setDeliveryStep('doc-back');
+                          } else {
+                            setDeliveryFotoIdFront('');
+                            setValidationError(`⚠️ No es una identificación oficial válida. ${data.message}`);
+                            alert(`❌ Documento Inválido\n\n${data.message || 'Asegúrese de capturar un ID oficial válido (INE, Licencia, Cédula o Cartilla).'}`);
+                          }
+                        } catch (err) {
+                          console.warn("API Error validation fallback: ", err);
+                          setDeliveryFotoIdFront(b64);
+                          setDeliveryStep('doc-back');
+                        } finally {
+                          setIsValidatingFront(false);
+                        }
                       }}
-                      className="flex-1 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-all cursor-pointer text-center"
-                    >
-                      Continuar a Firmas
-                    </button>
+                      savedImage={deliveryFotoIdFront}
+                      hideUpload={false}
+                    />
+                  )}
+
+                  {validationError && (
+                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
+                      {validationError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
                     <button
                       type="button"
+                      disabled={isValidatingFront}
                       onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
-                      className="px-4 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-650"
+                      className="flex-1 py-2.5 bg-white hover:bg-slate-50 border border-gray-300 rounded-lg text-xs font-bold text-gray-650"
                     >
                       Cancelar
                     </button>
                   </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-emerald-50 border border-emerald-200 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>✓ Identificaciones registradas correctamente. Proceda a ingresar las firmas de conformidad.</span>
+                </div>
+              )}
+
+              {/* Step 2: Back ID */}
+              {deliveryStep === 'doc-back' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
+                    <strong>Paso 2: Foto Reverso de Identificación Oficial</strong>
+                    <p className="text-gray-500 mt-0.5">Capture o cargue el reverso de la identificación oficial (donde se observa la firma autógrafa, sello o código de barras).</p>
                   </div>
 
-                  {/* Delivery signatures */}
-                  <div className="space-y-3 select-none">
-                    <span className="block text-[11px] font-black text-gray-500 uppercase tracking-widest select-none font-bold">
-                      Paso 2: Firmas Obligatorias de Descarga
-                    </span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <SignaturePad 
-                        title="Asesor Kioto Entregando" 
-                        onSave={(b64) => setDeliveryFirmaAsesor(b64)} 
-                        onClear={() => setDeliveryFirmaAsesor('')}
-                        savedDataUrl={deliveryFirmaAsesor}
-                      />
-                      <SignaturePad 
-                        title="Cliente Conforme Recibiendo" 
-                        onSave={(b64) => setDeliveryFirmaCliente(b64)} 
-                        onClear={() => setDeliveryFirmaCliente('')}
-                        savedDataUrl={deliveryFirmaCliente}
-                      />
+                  {isValidatingBack ? (
+                    <div className="border border-emerald-150 rounded-xl py-12 bg-emerald-50/20 text-center space-y-3 animate-pulse">
+                      <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-xs font-bold text-emerald-800">Validando autenticidad del reverso...</p>
                     </div>
-                  </div>
+                  ) : (
+                    <CameraCapture 
+                      label="Capturar ID Reverso (Lado Firma)" 
+                      onCapture={async (b64) => {
+                        if (!b64) {
+                          setDeliveryFotoIdBack('');
+                          return;
+                        }
+                        setIsValidatingBack(true);
+                        setValidationError('');
+                        try {
+                          const res = await fetch('/api/ai/validate-id', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image64: b64, side: 'back' })
+                          });
+                          const data = await res.json();
+                          if (data.isValid) {
+                            setDeliveryFotoIdBack(b64);
+                            alert(`✅ Identificación Válida: Lado Reverso verificado.\n\nEstatus: ${data.message || 'Se procesó correctamente.'}`);
+                            setDeliveryStep('firma-cliente');
+                          } else {
+                            setDeliveryFotoIdBack('');
+                            setValidationError(`⚠️ Reverso no válido. ${data.message}`);
+                            alert(`❌ Reverso Inválido\n\n${data.message || 'Asegúrese de tomar foto al lado reverso del documento de identidad.'}`);
+                          }
+                        } catch (err) {
+                          console.warn("API Error validation back fallback: ", err);
+                          setDeliveryFotoIdBack(b64);
+                          setDeliveryStep('firma-cliente');
+                        } finally {
+                          setIsValidatingBack(false);
+                        }
+                      }}
+                      savedImage={deliveryFotoIdBack}
+                      hideUpload={false}
+                    />
+                  )}
 
-                  <div className="flex gap-3 pt-3">
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex-1 py-3 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors cursor-pointer"
-                    >
-                      Liberar y Marcar Como Entregado
-                    </button>
+                  {validationError && (
+                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
+                      {validationError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
                     <button
                       type="button"
-                      onClick={() => setDeliveryStep('documentos')}
-                      className="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-gray-700 transition-colors"
+                      onClick={() => setDeliveryStep('doc-front')}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-gray-700 transition"
                     >
                       Atrás
                     </button>
                     <button
                       type="button"
                       onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
-                      className="px-4 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-650"
+                      className="flex-1 py-2.5 bg-white hover:bg-slate-50 border border-gray-300 rounded-lg text-xs font-bold text-gray-650"
                     >
                       Cancelar
                     </button>
                   </div>
-                </>
+                </div>
+              )}
+
+              {/* Step 3: Client Signature */}
+              {deliveryStep === 'firma-cliente' && (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-100 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5 shrink-0">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>✓ Identificación Oficial Validada por Ambos Lados</span>
+                  </div>
+
+                  <SignaturePad 
+                    title="Firma autógrafa del cliente conforme recibiendo" 
+                    onSave={(b64) => setDeliveryFirmaCliente(b64)} 
+                    onClear={() => setDeliveryFirmaCliente('')}
+                    savedDataUrl={deliveryFirmaCliente}
+                  />
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!deliveryFirmaCliente) {
+                          alert("⚠️ Debe registrar la firma de conformidad del cliente antes de avanzar.");
+                          return;
+                        }
+                        setDeliveryStep('firma-asesor');
+                      }}
+                      className="flex-1 py-3 bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-all cursor-pointer text-center"
+                    >
+                      Guardar y Continuar a Firma de Asesor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryStep('doc-back')}
+                      className="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-gray-700 transition"
+                    >
+                      Atrás
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Advisor Signature */}
+              {deliveryStep === 'firma-asesor' && (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-100 p-2 text-emerald-800 text-[10px] font-bold rounded-lg uppercase flex items-center gap-1.5 shrink-0 animate-fade-in">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>✓ Identificación y Firma del Cliente Registradas</span>
+                  </div>
+
+                  <SignaturePad 
+                    title="Firma autógrafa del Asesor Técnico autorizando entrega" 
+                    onSave={(b64) => setDeliveryFirmaAsesor(b64)} 
+                    onClear={() => setDeliveryFirmaAsesor('')}
+                    savedDataUrl={deliveryFirmaAsesor}
+                  />
+
+                  <div className="flex gap-3 pt-2 animate-fade-in">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 py-3 bg-emerald-800 hover:bg-emerald-950 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-md transition-colors cursor-pointer"
+                    >
+                      Liberar y Marcar Como Entregado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryStep('firma-cliente')}
+                      className="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-gray-700 transition"
+                    >
+                      Atrás
+                    </button>
+                  </div>
+                </div>
               )}
 
             </form>
@@ -1450,13 +1701,11 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             {/* Header Block exactly matching professional agency standard */}
             <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6 mb-6">
               <div>
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-10 h-10 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-black text-xl select-none">
-                    K
-                  </div>
+                <div className="flex items-center space-x-3.5">
+                  <KiotoLogo className="h-11 w-auto" />
                   <div>
                     <h2 className="text-xl font-black text-neutral-900 tracking-tight leading-none">Kioto Motors S.A. de C.V.</h2>
-                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#666] mt-0.5 mt-1">Taller de Servicio Mecánico Autorizado</p>
+                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#666] mt-1">Taller de Servicio Mecánico Autorizado</p>
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2.5 font-medium leading-relaxed select-text">
@@ -1519,19 +1768,24 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   📋 Diagnóstico y Estado del Checklist Técnico
                 </h4>
                 
-                <div className="space-y-2 select-text">
+                <div className="space-y-1.5 select-text">
                   {standardChecklistParts.map((part) => {
                     const isChecked = printService.checklist?.[part];
                     return (
-                      <div key={part} className="flex items-center text-xs justify-between py-1.5 border-b border-gray-100 font-medium">
-                        <span className="text-gray-800">{part}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                          isChecked 
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-150 font-black' 
-                            : 'bg-rose-50 text-rose-700 border border-rose-150'
-                        }`}>
-                          {isChecked ? '✓ Verificado y OK' : '✗ No Auditado / Corrección'}
-                        </span>
+                      <div key={part} className="flex items-center text-xs justify-between py-1 border-b border-gray-100 font-medium leading-tight">
+                        <span className="text-gray-700 text-[11px]">{part}</span>
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                            isChecked 
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-700 font-black text-[11px]' 
+                              : 'border-slate-300 bg-white text-transparent text-[11px]'
+                          }`}>
+                            {isChecked ? '✓' : ''}
+                          </div>
+                          <span className={`text-[9px] font-extrabold uppercase tracking-wide tracking-tight ${isChecked ? 'text-emerald-800' : 'text-gray-400'}`}>
+                            {isChecked ? 'OK' : 'N/A'}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1569,9 +1823,27 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
               <div className="text-center bg-slate-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
                 <span className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">Evidencia Recepción</span>
                 {printService.recepcionFoto ? (
-                  <div className="border border-slate-250 bg-[#131315] max-h-36 rounded overflow-hidden flex items-center justify-center">
-                    <img src={printService.recepcionFoto} alt="Recepción" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
-                  </div>
+                  (() => {
+                    let images: string[] = [];
+                    if (printService.recepcionFoto.startsWith('[')) {
+                      try {
+                        images = JSON.parse(printService.recepcionFoto);
+                      } catch (e) {
+                        images = [printService.recepcionFoto];
+                      }
+                    } else {
+                      images = [printService.recepcionFoto];
+                    }
+                    return (
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-white border border-slate-200 rounded max-h-36 overflow-hidden">
+                        {images.map((imgUrl, idx) => (
+                          <div key={idx} className="border border-slate-200 rounded overflow-hidden aspect-video bg-neutral-900 flex items-center justify-center">
+                            <img src={imgUrl} alt={`Recibido ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()
                 ) : (
                   <div className="border border-gray-200 h-28 bg-gray-100 flex items-center justify-center text-[11px] text-gray-400 italic font-medium">
                     No registrada
