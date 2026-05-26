@@ -67,16 +67,20 @@ function SignaturePad({ title, onSave, onClear, savedDataUrl, heightClass = 'h-5
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     
+    // Scale standard client coordinates to actual canvas resolution coordinates
+    const scaleX = rect.width ? (canvas.width / rect.width) : 1;
+    const scaleY = rect.height ? (canvas.height / rect.height) : 1;
+    
     if ('touches' in e) {
       if (e.touches.length === 0) return { x: 0, y: 0 };
       return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY
       };
     } else {
       return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
       };
     }
   };
@@ -1581,8 +1585,9 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           }
                         } catch (err) {
                           console.warn("API Error validation fallback: ", err);
-                          setDeliveryFotoIdFront(b64);
-                          setDeliveryStep('doc-back');
+                          setDeliveryFotoIdFront('');
+                          setValidationError("⚠️ ID inválida: No se pudo verificar como identificación oficial. Asegúrese de capturar un ID oficial vigente (INE, Licencia, Cédula o Cartilla) con iluminación delantera nítida.");
+                          alert("❌ ID Inválida\n\nNo fue posible validar el documento como una identificación oficial mexicana válida.");
                         } finally {
                           setIsValidatingFront(false);
                         }
@@ -1652,8 +1657,9 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           }
                         } catch (err) {
                           console.warn("API Error validation back fallback: ", err);
-                          setDeliveryFotoIdBack(b64);
-                          setDeliveryStep('firma-cliente');
+                          setDeliveryFotoIdBack('');
+                          setValidationError("⚠️ ID inválida: No se pudo verificar el reverso como identificación oficial. Asegúrese de capturar la parte trasera del documento con iluminación nítida.");
+                          alert("❌ ID Inválida - Reverso\n\nNo fue posible validar el reverso del documento como una identificación oficial mexicana válida.");
                         } finally {
                           setIsValidatingBack(false);
                         }

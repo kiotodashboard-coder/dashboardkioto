@@ -1224,7 +1224,7 @@ app.post("/api/chats/message", async (req, res) => {
     const chatbotConfig = chatbotConfigSnap.exists() ? chatbotConfigSnap.data() : { web: true, whatsapp: true, messenger: true };
 
     const isPlatformEnabled = 
-      platform === 'web' ? chatbotConfig.web !== false :
+      (platform === 'web' || platform === 'chatbot') ? chatbotConfig.web !== false :
       platform === 'whatsapp' ? chatbotConfig.whatsapp !== false :
       platform === 'facebook' || platform === 'messenger' ? chatbotConfig.messenger !== false : true;
 
