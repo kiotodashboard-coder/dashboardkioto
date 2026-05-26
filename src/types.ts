@@ -43,6 +43,7 @@ export interface ServicioMecanico {
   comentariosMecanico?: string; // Description of mechanic actual execution
   recomendacionesMecanico?: string; // Future recommendations for car safety
   statusHistory?: Record<string, string>; // Status -> timestamp dictionary for transition duration metrics
+  deliveredAt?: string; // Date and time when the service status is set to delivered
 }
 
 // Simulated notification sent via WhatsApp

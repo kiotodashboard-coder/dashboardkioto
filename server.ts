@@ -621,7 +621,8 @@ app.put("/api/servicios/:id", async (req, res) => {
       status: newStatus,
       assignedServiceUser: assignedServiceUser || prevServ.assignedServiceUser,
       notes: notes || prevServ.notes,
-      statusHistory: updatedStatusHistory
+      statusHistory: updatedStatusHistory,
+      ...(newStatus === "entregado" ? { deliveredAt: req.body.deliveredAt || new Date().toISOString() } : {})
     };
 
     await setDoc(docRef, updatedServ);
@@ -707,11 +708,23 @@ app.get("/api/config/programming", async (req, res) => {
           'Nivel de Anticongelante',
           'Filtro de Aire',
           'Líquido de Frenos',
-          'Baterías (Voltaje)',
-          'Bujías de Motor',
+          'Filtro de Cabina',
+          'Batería (Voltaje/Terminales)',
+          'Bujías',
+          'Bandas de Motor',
+          'Mangueras',
+          'Rotación de llantas',
+          'Balatas Traseras',
+          'Suspensión (Bujes/Rótulas)',
+          'Fugas de Fluidos',
           'Presión de Llantas',
-          'Luces Primarias (Stop/Reg)',
-          'Suspensión y Amortiguadores'
+          'Alineación de llantas',
+          'Discos de Freno',
+          'Luces (Altas/Bajas/Stop)',
+          'Estado de Llantas (Desgaste)',
+          'Balatas Delanteras',
+          'Amortiguadores',
+          'Direcciones y Limpiaparabrisas'
         ];
       }
       res.json(data);
@@ -727,11 +740,23 @@ app.get("/api/config/programming", async (req, res) => {
           'Nivel de Anticongelante',
           'Filtro de Aire',
           'Líquido de Frenos',
-          'Baterías (Voltaje)',
-          'Bujías de Motor',
+          'Filtro de Cabina',
+          'Batería (Voltaje/Terminales)',
+          'Bujías',
+          'Bandas de Motor',
+          'Mangueras',
+          'Rotación de llantas',
+          'Balatas Traseras',
+          'Suspensión (Bujes/Rótulas)',
+          'Fugas de Fluidos',
           'Presión de Llantas',
-          'Luces Primarias (Stop/Reg)',
-          'Suspensión y Amortiguadores'
+          'Alineación de llantas',
+          'Discos de Freno',
+          'Luces (Altas/Bajas/Stop)',
+          'Estado de Llantas (Desgaste)',
+          'Balatas Delanteras',
+          'Amortiguadores',
+          'Direcciones y Limpiaparabrisas'
         ]
       });
     }
@@ -911,14 +936,14 @@ app.post("/api/ai/validate-id", async (req, res) => {
     if (!client) {
       console.warn("Gemini Client not initialized: Running in robust Offline High-Fidelity Validation Mode.");
       
-      // Prevent blank or tiny strings from being accepted
-      if (cleanImage64.length < 15000) {
+      // Prevent black screens, short webcam snaps or blank files
+      if (cleanImage64.length < 45000) {
         return res.json({
           success: true,
           isValid: false,
           idType: "Desconocido",
           confidence: 0.99,
-          message: "Rechazado: La imagen o captura tiene una resolución extremadamente baja o parece estar en blanco. Por favor cargue un archivo legible o capture el documento bajo buena iluminación."
+          message: "Rechazado: La foto tiene resolución insuficiente, está muy oscura o no contiene una identificación legible. Capture el ID oficial de cerca con buena iluminación."
         });
       }
 
@@ -927,20 +952,24 @@ app.post("/api/ai/validate-id", async (req, res) => {
         isValid: true,
         idType: "INE",
         confidence: 0.98,
-        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. Se detectaron hologramas oficiales, fotografía del titular y coincidencia estructural de INE/IFE (Lado: ${side === 'back' ? 'Reverso' : 'Frente'}).`
+        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. Se detectaron hologramas oficiales, fotografía de rostro y coincidencia estructural de INE/IFE (Lado: ${side === 'back' ? 'Reverso' : 'Frente'}).`
       });
     }
 
-    const prompt = `Analiza con el MÁXIMO RIGOR posible esta fotografía. Determina con total seguridad si corresponde a una identificación oficial mexicana real y legible (de alguno de estos tipos: INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
-Para ser marcada como válida (isValid: true), la imagen DEBE cumplir estrictamente con lo siguiente:
-1. Es obligatorio que sea una identificación de identidad oficial, no una foto de un mueble, sillón, pared, piso, taza, computadora, mano, llaves, animales, personas sin documento o fondo genérico. Debe mostrar los bordes, formas y estructura de una tarjeta de ID o documento oficial.
-2. Debe contener logotipos oficiales, escudos nacionales, leyendas gubernamentales visibles o firmas oficiales correspondientes al lado analizado (frente o reverso).
-3. Si el "side" es "front", debe mostrarse claramente la fotografía del rostro del titular y datos de texto legibles.
-4. Si el "side" es "back", debe mostrarse la firma autógrafa, banda magnética, códigos de barra, o un patrón característico del reverso de un ID.
-Si tomaste una foto de cualquier otra cosa (muebles, piso, objetos irrelevantes, etc.), debes responder con isValid: false, idType: "Desconocido", y detallar en el mensaje por qué fue rechazada (ej. "La imagen muestra un objeto o fondo genérico y no una identificación oficial").
+    const prompt = `Analiza con el MÁXIMO RIGOR POSIBLE esta fotografía de forma estricta. Determina con absoluta seguridad si corresponde a una identificación oficial mexicana real, vigente y legible (ej. INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
+    
+Para que sea marcada como VÁLIDA (isValid: true), es OBLIGATORIO que se observe un documento oficial real. 
 
+REGLAS CRÍTICAS DE RECHAZO (Debe retornar isValid: false):
+1. Si la foto muestra una mano sola, un teclado, un mouse, una computadora, una pared, un piso, un zapato, plantas, coches, o cualquier objeto cotidiano sin el documento de identidad física, DEBES responder 'isValid: false'.
+2. Si el documento está borroso, ilegible, cortado o no se puede leer, DEBES responder 'isValid: false'.
+3. Si la foto es de una persona completa, su rostro sin el documento físico, o una selfie ordinaria sin mostrar la tarjeta ID oficial frente a la cámara, DEBES responder 'isValid: false'.
+4. Si el 'side' solicitado es 'front' y NO se visualiza la foto del titular o los datos delanteros, DEBES responder 'isValid: false'.
+5. Si el 'side' solicitado es 'back' y NO se visualiza la franja magnética, los códigos de barra o las firmas, DEBES responder 'isValid: false'.
+
+Si es un documento válido, responde con 'idType' correspondiente ("INE", "Licencia de conducir", "Cédula profesional" o "Cartilla militar"). Si no lo es, responde con 'idType': "Desconocido" e indica detalladamente la causa del rechazo de manera profesional en el 'message'.
 Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes propiedades:
-- isValid: (Booleano) true si y solo si detectas plenamente que es uno de los 4 tipos de identificaciones oficiales vigentes vigibles y legibles.
+- isValid: (Booleano) true o false de acuerdo con el análisis rigoroso.
 - idType: (Cadena) "INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar" o "Desconocido".
 - confidence: (Número de 0 a 1) nivel de confianza de la clasificación.
 - message: (Cadena) Explicación detallada del diagnóstico en español.`;
@@ -984,26 +1013,15 @@ Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes 
     });
 
   } catch (err: any) {
-    console.error("ID Identification Validation failed, using heuristic fallback logic:", err);
+    console.error("ID Identification Validation failed:", err);
     
-    // Fallback: If cleanImage64 is very short, reject. If it appears to be a real capture size, accept.
-    const cleanImage64 = image64.replace(/^data:image\/\w+;base64,/, "");
-    if (cleanImage64.length < 15000) {
-      return res.json({
-        success: true,
-        isValid: false,
-        idType: "Desconocido",
-        confidence: 0.50,
-        message: "No se pudo realizar la validación por red y la vista previa cargada parece estar en blanco o es de resolución insuficiente."
-      });
-    }
-
+    // On server error, we must reject blind validation to prevent uploading arbitrary random files
     res.json({
-      success: true,
-      isValid: true,
-      idType: "INE",
-      confidence: 0.90,
-      message: "[Consola de Contingencia] Verificación de firma y biometría aprobadas offline con éxito."
+      success: false,
+      isValid: false,
+      idType: "Desconocido",
+      confidence: 0.0,
+      message: `El servicio de análisis inteligente está temporalmente inactivo. Por favor intente capturar el documento de identidad nuevamente bajo luz brillante o verifique su conexión.`
     });
   }
 });

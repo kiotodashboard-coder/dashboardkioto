@@ -39,6 +39,7 @@ export default function EmbeddedChatbotView() {
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingNotifs, setLoadingNotifs] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState<boolean>(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -174,6 +175,16 @@ export default function EmbeddedChatbotView() {
 
   // Initial load
   useEffect(() => {
+    // Fetch live chatbot configuration
+    customFetch('/api/config/chatbot')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setIsWebChatbotEnabled(data.web !== false);
+        }
+      })
+      .catch(err => console.error("Error loading web chatbot config:", err));
+
     loadOrCreateSession();
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 7000);
@@ -226,90 +237,108 @@ export default function EmbeddedChatbotView() {
           </div>
         )}
 
-        {/* Scrollable messages viewport */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
-          {activeSession ? (
-            <>
-              {/* Intro note */}
-              <div className="text-[10px] text-center text-gray-500 bg-white/80 p-3 rounded-xl border border-gray-200/50 shadow-2xs max-w-xs mx-auto mb-2">
-                🤖 Platica con nuestro Asistente Virtual para agendar tu servicio mecánico de manera automática y paso a paso.
-              </div>
-
-              {activeSession.messages.map((msg) => (
-                <div 
-                  key={msg.id} 
-                  className={`flex ${msg.sender === 'client' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs shadow-xs leading-relaxed ${
-                    msg.sender === 'client'
-                      ? 'bg-neutral-900 border border-neutral-950 text-white rounded-tr-none' 
-                      : 'bg-white border border-gray-200 text-gray-950 rounded-tl-none'
-                  }`}>
-                    <div className="whitespace-pre-line">
-                      {msg.text.split('**').map((part, idx) => 
-                        idx % 2 === 1 ? <strong key={idx} className="font-extrabold text-blue-900">{part}</strong> : part
-                      ).map((partText, idx) => {
-                        // Apply additional markdown-style bold for variables
-                        if (typeof partText === 'string') {
-                          return partText.split('*').map((subpart, subidx) => 
-                            subidx % 2 === 1 ? <strong key={subidx} className="font-bold">{subpart}</strong> : subpart
-                          );
-                        }
-                        return partText;
-                      })}
-                    </div>
-                    <div className="text-[8px] text-right mt-1.5 opacity-60 flex items-center justify-end">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {msg.sender === 'client' && <Check className="w-3 h-3 text-emerald-400 ml-1" />}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-white border border-gray-200 text-gray-500 rounded-2xl rounded-tl-none px-4 py-2.5 text-xs shadow-2xs flex items-center space-x-1">
-                    <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce"></span>
-                    <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="py-20 text-center text-xs text-gray-400 flex flex-col items-center justify-center space-y-3">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-300" />
-              <span>Cargando asistente virtual...</span>
+        {/* Conditionally render Chat or Offline / Improvement message based on isWebChatbotEnabled configuration */}
+        {!isWebChatbotEnabled ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-6 shadow-xs animate-bounce">
+              <Bot className="w-8 h-8" />
             </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
-
-        {/* Input box */}
-        {!isChannelEnabled ? (
-          <div className="bg-amber-50 border-t border-amber-200 p-3.5 text-center text-[11px] text-amber-800 font-bold select-none shrink-0 flex flex-col items-center justify-center space-y-1">
-            <span>⚠️ Canal Apagado y Desactivado por Administración</span>
-            <span className="text-[9px] font-normal text-amber-600">El chatbot inteligente para este canal de atención está deshabilitado.</span>
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-3">Asistente Virtual</h2>
+            <p className="text-base font-extrabold text-neutral-900 leading-snug max-w-xs mb-3">
+              Seguimos mejorando, en un momento volvemos contigo
+            </p>
+            <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+              Nuestro asistente de citas en el portal web está recibiendo mantenimiento programado para optimizar su procesamiento.
+            </p>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="bg-white border-t border-gray-200 p-3 flex items-center space-x-2 shrink-0">
-            <input
-              ref={inputRef}
-              type="text"
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              placeholder="Escribe tu respuesta..."
-              className="flex-1 bg-gray-100 border border-gray-200 focus:bg-white rounded-full py-2.5 px-4 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-gray-950 transition-colors"
-              disabled={loading || !activeSession}
-            />
-            <button
-              type="submit"
-              disabled={loading || !activeSession || !messageText.trim()}
-              className="p-2.5 rounded-full bg-neutral-950 text-white transition-opacity disabled:opacity-45 shrink-0 cursor-pointer hover:bg-neutral-800"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+          <>
+            {/* Scrollable messages viewport */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+              {activeSession ? (
+                <>
+                  {/* Intro note */}
+                  <div className="text-[10px] text-center text-gray-500 bg-white/80 p-3 rounded-xl border border-gray-200/50 shadow-2xs max-w-xs mx-auto mb-2">
+                    🤖 Platica con nuestro Asistente Virtual para agendar tu servicio mecánico de manera automática y paso a paso.
+                  </div>
+
+                  {activeSession.messages.map((msg) => (
+                    <div 
+                      key={msg.id} 
+                      className={`flex ${msg.sender === 'client' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs shadow-xs leading-relaxed ${
+                        msg.sender === 'client'
+                          ? 'bg-neutral-900 border border-neutral-950 text-white rounded-tr-none' 
+                          : 'bg-white border border-gray-200 text-gray-950 rounded-tl-none'
+                      }`}>
+                      <div className="whitespace-pre-line">
+                        {msg.text.split('**').map((part, idx) => 
+                          idx % 2 === 1 ? <strong key={idx} className="font-extrabold text-blue-900">{part}</strong> : part
+                        ).map((partText, idx) => {
+                          // Apply additional markdown-style bold for variables
+                          if (typeof partText === 'string') {
+                            return partText.split('*').map((subpart, subidx) => 
+                              subidx % 2 === 1 ? <strong key={subidx} className="font-bold">{subpart}</strong> : subpart
+                            );
+                          }
+                          return partText;
+                        })}
+                      </div>
+                      <div className="text-[8px] text-right mt-1.5 opacity-60 flex items-center justify-end">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {msg.sender === 'client' && <Check className="w-3 h-3 text-emerald-400 ml-1" />}
+                      </div>
+                    </div>
+                  </div>
+                  ))}
+
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white border border-gray-200 text-gray-500 rounded-2xl rounded-tl-none px-4 py-2.5 text-xs shadow-2xs flex items-center space-x-1">
+                        <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce"></span>
+                        <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                        <span className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-20 text-center text-xs text-gray-400 flex flex-col items-center justify-center space-y-3">
+                  <RefreshCw className="w-6 h-6 animate-spin text-gray-300" />
+                  <span>Cargando asistente virtual...</span>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input box */}
+            {!isChannelEnabled ? (
+              <div className="bg-amber-50 border-t border-amber-200 p-3.5 text-center text-[11px] text-amber-800 font-bold select-none shrink-0 flex flex-col items-center justify-center space-y-1">
+                <span>⚠️ Canal Apagado y Desactivado por Administración</span>
+                <span className="text-[9px] font-normal text-amber-600">El chatbot inteligente para este canal de atención está deshabilitado.</span>
+              </div>
+            ) : (
+              <form onSubmit={handleSendMessage} className="bg-white border-t border-gray-200 p-3 flex items-center space-x-2 shrink-0">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Escribe tu respuesta..."
+                  className="flex-1 bg-gray-100 border border-gray-200 focus:bg-white rounded-full py-2.5 px-4 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 text-gray-950 transition-colors"
+                  disabled={loading || !activeSession}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !activeSession || !messageText.trim()}
+                  className="p-2.5 rounded-full bg-neutral-950 text-white transition-opacity disabled:opacity-45 shrink-0 cursor-pointer hover:bg-neutral-800"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            )}
+          </>
         )}
       </div>
     </div>

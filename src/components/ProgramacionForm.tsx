@@ -21,7 +21,8 @@ export default function ProgramacionForm() {
   const [checklistItems, setChecklistItems] = useState<string[]>([]);
   const [newItemText, setNewItemText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingCapacity, setSavingCapacity] = useState(false);
+  const [savingChecklist, setSavingChecklist] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -43,11 +44,23 @@ export default function ProgramacionForm() {
             'Nivel de Anticongelante',
             'Filtro de Aire',
             'Líquido de Frenos',
-            'Baterías (Voltaje)',
-            'Bujías de Motor',
+            'Filtro de Cabina',
+            'Batería (Voltaje/Terminales)',
+            'Bujías',
+            'Bandas de Motor',
+            'Mangueras',
+            'Rotación de llantas',
+            'Balatas Traseras',
+            'Suspensión (Bujes/Rótulas)',
+            'Fugas de Fluidos',
             'Presión de Llantas',
-            'Luces Primarias (Stop/Reg)',
-            'Suspensión y Amortiguadores'
+            'Alineación de llantas',
+            'Discos de Freno',
+            'Luces (Altas/Bajas/Stop)',
+            'Estado de Llantas (Desgaste)',
+            'Balatas Delanteras',
+            'Amortiguadores',
+            'Direcciones y Limpiaparabrisas'
           ]);
         }
       }
@@ -106,9 +119,9 @@ export default function ProgramacionForm() {
     setChecklistItems(checklistItems.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveCapacity = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+    setSavingCapacity(true);
     setSuccessMsg('');
     setErrorMsg('');
 
@@ -125,7 +138,7 @@ export default function ProgramacionForm() {
       });
 
       if (res.ok) {
-        setSuccessMsg('¡Parámetros de programación y checklist guardados con éxito! El sistema y mecánico ahora respetarán estas configuraciones de inmediato.');
+        setSuccessMsg('¡Parámetros de capacidad y horarios guardados con éxito!');
         setTimeout(() => setSuccessMsg(''), 6000);
       } else {
         setErrorMsg('Ocurrió un error al actualizar los parámetros de capacidad.');
@@ -134,7 +147,39 @@ export default function ProgramacionForm() {
       console.error(err);
       setErrorMsg('Error de red. Verifique la conexión.');
     } finally {
-      setSaving(false);
+      setSavingCapacity(false);
+    }
+  };
+
+  const handleSaveChecklist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingChecklist(true);
+    setSuccessMsg('');
+    setErrorMsg('');
+
+    try {
+      const res = await customFetch('/api/config/programming', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...config,
+          checklistItems: checklistItems
+        })
+      });
+
+      if (res.ok) {
+        setSuccessMsg('¡Checklist técnico guardado con éxito! Los mecánicos verán este checklist actualizado de inmediato.');
+        setTimeout(() => setSuccessMsg(''), 6000);
+      } else {
+        setErrorMsg('Ocurrió un error al guardar el checklist.');
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('Error de red. Verifique la conexión.');
+    } finally {
+      setSavingChecklist(false);
     }
   };
 
@@ -172,89 +217,115 @@ export default function ProgramacionForm() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Left Side Form fields */}
-          <form onSubmit={handleSave} className="lg:col-span-7 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Servicios aceptados simultáneamente por Slot
-                </label>
-                <select
-                  id="prog-max-services"
-                  value={config.maxServicesPerSlot}
-                  onChange={(e) => setConfig({ ...config, maxServicesPerSlot: Number(e.target.value) })}
-                  className="w-full bg-gray-50 border border-gray-250 text-gray-950 rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all"
+          <div className="lg:col-span-7 space-y-6">
+            
+            {/* Form 1: Capacidad y Horarios */}
+            <form onSubmit={handleSaveCapacity} className="bg-slate-50 border border-gray-250 rounded-2xl p-5 space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-widest text-neutral-800 flex items-center mb-1">
+                <Clock className="w-4 h-4 mr-2 text-indigo-600" />
+                1. Capacidad y Horarios de Citas
+              </h4>
+              <p className="text-[10px] text-gray-500 pb-2 border-b border-gray-150">
+                Configure el límite de autos atendidos por slot y el horario general de atención.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
+                    Servicios aceptados simultáneamente por Slot
+                  </label>
+                  <select
+                    id="prog-max-services"
+                    value={config.maxServicesPerSlot}
+                    onChange={(e) => setConfig({ ...config, maxServicesPerSlot: Number(e.target.value) })}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all"
+                  >
+                    <option value={1}>1 Servicio (Capacidad mínima)</option>
+                    <option value={2}>2 Servicios (Recomendado)</option>
+                    <option value={3}>3 Servicios</option>
+                    <option value={4}>4 Servicios</option>
+                    <option value={5}>5 Servicios</option>
+                    <option value={8}>8 Servicios (Taller grande)</option>
+                    <option value={10}>10 Servicios (Máximo operativo)</option>
+                  </select>
+                  <p className="text-[9px] text-gray-400 mt-1">Límite de vehículos que caben en fosas/rampas en el mismo lapso de tiempo.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
+                    Intervalo entre citas (Minutos)
+                  </label>
+                  <select
+                    id="prog-slot-interval"
+                    value={config.slotIntervalMinutes}
+                    onChange={(e) => setConfig({ ...config, slotIntervalMinutes: Number(e.target.value) })}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all"
+                  >
+                    <option value={10}>Cada 10 minutos</option>
+                    <option value={15}>Cada 15 minutos</option>
+                    <option value={20}>Cada 20 minutos</option>
+                    <option value={25}>Cada 25 minutos</option>
+                    <option value={30}>Cada 30 minutos</option>
+                  </select>
+                  <p className="text-[9px] text-gray-400 mt-1">Frecuencia en minutos con la que el sistema o el chatbot asigna citas.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
+                    Hora de Apertura del Taller
+                  </label>
+                  <input
+                    type="time"
+                    id="prog-open-time"
+                    required
+                    value={config.openingTime}
+                    onChange={(e) => setConfig({ ...config, openingTime: e.target.value })}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
+                    Hora de Cierre del Taller
+                  </label>
+                  <input
+                    type="time"
+                    id="prog-close-time"
+                    required
+                    value={config.closingTime}
+                    onChange={(e) => setConfig({ ...config, closingTime: e.target.value })}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-gray-200 flex justify-end">
+                <button
+                  type="submit"
+                  id="btn-save-capacity"
+                  disabled={savingCapacity}
+                  className="px-5 py-2.5 bg-neutral-950 hover:bg-neutral-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center space-x-2 cursor-pointer select-none"
                 >
-                  <option value={1}>1 Servicio (Capacidad mínima)</option>
-                  <option value={2}>2 Servicios (Recomendado)</option>
-                  <option value={3}>3 Servicios</option>
-                  <option value={4}>4 Servicios</option>
-                  <option value={5}>5 Servicios</option>
-                  <option value={8}>8 Servicios (Taller grande)</option>
-                  <option value={10}>10 Servicios (Máximo operativo)</option>
-                </select>
-                <p className="text-[10px] text-gray-400 mt-1">Límite de vehículos que caben en fosas/rampas en el mismo lapso de tiempo.</p>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingCapacity ? 'Guardando Capacidad...' : 'Guardar Horarios y Capacidad'}</span>
+                </button>
               </div>
+            </form>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Intervalo entre citas (Minutos)
-                </label>
-                <select
-                  id="prog-slot-interval"
-                  value={config.slotIntervalMinutes}
-                  onChange={(e) => setConfig({ ...config, slotIntervalMinutes: Number(e.target.value) })}
-                  className="w-full bg-gray-50 border border-gray-250 text-gray-950 rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all"
-                >
-                  <option value={10}>Cada 10 minutos</option>
-                  <option value={15}>Cada 15 minutos</option>
-                  <option value={20}>Cada 20 minutos</option>
-                  <option value={25}>Cada 25 minutos</option>
-                  <option value={30}>Cada 30 minutos</option>
-                </select>
-                <p className="text-[10px] text-gray-400 mt-1">Frecuencia en minutos con la que el sistema o el chatbot asigna citas.</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Hora de Apertura del Taller
-                </label>
-                <input
-                  type="time"
-                  id="prog-open-time"
-                  required
-                  value={config.openingTime}
-                  onChange={(e) => setConfig({ ...config, openingTime: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-250 text-gray-950 rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Hora de Cierre del Taller
-                </label>
-                <input
-                  type="time"
-                  id="prog-close-time"
-                  required
-                  value={config.closingTime}
-                  onChange={(e) => setConfig({ ...config, closingTime: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-250 text-gray-950 rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all font-mono"
-                />
-              </div>
-            </div>
-
-            {/* HIGH FIDELITY CHECKLIST MANAGER */}
-            <div className="bg-slate-50 border border-gray-200 rounded-2xl p-5 space-y-4">
-              <div>
-                <h4 className="text-xs font-extrabold uppercase tracking-wide text-gray-900 flex items-center">
-                  <Sparkles className="w-4 h-4 mr-2 text-indigo-600 font-black" />
-                  Checklist Técnico de Guardado ("Atendido")
-                </h4>
-                <p className="text-[10.5px] text-gray-500 mt-0.5">
-                  Establezca los componentes obligatorios que el mecánico debe validar antes de firmar la entrega del vehículo.
-                </p>
+            {/* Form 2: Checklist Manager */}
+            <form onSubmit={handleSaveChecklist} className="bg-slate-50 border border-gray-250 rounded-2xl p-5 space-y-4">
+              <div className="flex justify-between items-start pb-2 border-b border-gray-150">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-[#131315] flex items-center">
+                    <Sparkles className="w-4 h-4 mr-2 text-indigo-600 font-black" />
+                    2. Checklist Técnico Obligatorio
+                  </h4>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Establezca los componentes que el mecánico verificará para este checklist al pasar a estatus Atendido.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -264,7 +335,7 @@ export default function ProgramacionForm() {
                     placeholder="Ej. Líquido de Frenos, Bandas de Accesorios..."
                     value={newItemText}
                     onChange={(e) => setNewItemText(e.target.value)}
-                    className="flex-1 bg-white border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-950 focus:outline-none"
+                    className="flex-1 bg-white border border-gray-250 text-gray-950 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-950 focus:outline-none"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -275,14 +346,14 @@ export default function ProgramacionForm() {
                   <button
                     type="button"
                     onClick={handleAddItem}
-                    className="p-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-bold px-4 flex items-center space-x-1 cursor-pointer"
+                    className="p-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold px-4 flex items-center space-x-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Agregar</span>
                   </button>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-3 max-h-52 overflow-y-auto">
+                <div className="bg-white rounded-xl border border-gray-200 p-3 max-h-52 overflow-y-auto shadow-inner">
                   <span className="block text-[10px] font-black uppercase text-gray-400 mb-2 select-none">Componentes a Verificar ({checklistItems.length})</span>
                   {checklistItems.length === 0 ? (
                     <p className="text-xs text-gray-400 italic text-center py-6">Ningún elemento configurado. Llene la lista para iniciar.</p>
@@ -294,7 +365,7 @@ export default function ProgramacionForm() {
                           <button
                             type="button"
                             onClick={() => handleRemoveItem(index)}
-                            className="text-gray-400 hover:text-rose-600 transition p-0.5"
+                            className="text-gray-450 hover:text-rose-600 transition p-0.5"
                             title="Eliminar elemento"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -305,20 +376,20 @@ export default function ProgramacionForm() {
                   )}
                 </div>
               </div>
-            </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                id="btn-save-programming"
-                disabled={saving}
-                className="w-full md:w-auto px-6 py-3.5 bg-neutral-950 hover:bg-neutral-800 text-white hover:text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition-colors flex items-center justify-center space-x-2 cursor-pointer select-none"
-              >
-                <Save className="w-4 h-4" />
-                <span>{saving ? 'Guardando...' : 'Guardar Configuración'}</span>
-              </button>
-            </div>
-          </form>
+              <div className="pt-3 border-t border-gray-200 flex justify-end">
+                <button
+                  type="submit"
+                  id="btn-save-checklist"
+                  disabled={savingChecklist}
+                  className="px-5 py-2.5 bg-neutral-950 hover:bg-neutral-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center space-x-2 cursor-pointer select-none"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingChecklist ? 'Guardando Checklist...' : 'Guardar Checklist'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
 
           {/* Right Side summary calculation cards */}
           <div className="lg:col-span-5 bg-neutral-50 rounded-2xl border border-neutral-150 p-6 space-y-5">

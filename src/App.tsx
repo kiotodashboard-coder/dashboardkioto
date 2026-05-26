@@ -29,7 +29,9 @@ import {
   Settings,
   Mail,
   ArrowLeft,
-  Bot
+  Bot,
+  Terminal,
+  Copy
 } from 'lucide-react';
 import { User as UserType, ServicioMecanico } from './types';
 import { customFetch } from './utils/api';
@@ -128,6 +130,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>(() => {
     return localStorage.getItem('kioto_active_tab') || 'dashboard';
   });
+  const [embedTab, setEmbedTab] = useState<'bubble' | 'iframe'>('bubble');
+  const [copiedText, setCopiedText] = useState<boolean>(false);
 
   // Notification Banner
   const [appNotif, setAppNotif] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
@@ -336,7 +340,7 @@ export default function App() {
       
       {/* HEADER SECTION - Styled exactly to match the desktop mock layout */}
       <header className="bg-white border-b border-gray-200 shrink-0 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           
           {/* Left Block: Logo Kioto SVG and Title */}
           <div className="flex items-center space-x-3">
@@ -393,7 +397,7 @@ export default function App() {
       )}
 
       {/* CONTENT AREA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
         
         {!currentUser ? (
           /* LOGIN SCREEN VIEW (With removed header, removed shortcuts, and two-step flow) */
@@ -848,6 +852,147 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* WIDGET INTEGRATION CODE CARD */}
+                  {(() => {
+                    const portalUrl = typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-3arbs2kotcgihptz3rbf6o-82971551649.us-east1.run.app';
+                    
+                    const bubbleCodeSnippet = `<!-- Widget de Chatbot Inteligente IA - Kioto Auto -->
+<div id="kioto-chatbot-widget" style="position: fixed; bottom: 24px; right: 24px; z-index: 999999; font-family: system-ui, -apple-system, sans-serif;">
+  <!-- Botón Burbuja -->
+  <button id="kioto-chatbot-bubble" style="width: 56px; height: 56px; border-radius: 50%; background: #000000; border: 1px solid #27272a; color: #ffffff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); transition: all 0.2s ease; outline: none; position: relative;">
+    <!-- Icono Chat (Burbuja) -->
+    <svg id="kioto-icon-chat" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"></path></svg>
+    <!-- Icono Cerrar (X) -->
+    <svg id="kioto-icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: none; transition: transform 0.2s ease;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    <!-- Notificación de Actividad -->
+    <span style="position: absolute; top: 0; right: 0; display: flex; height: 12px; width: 12px; margin-top: -2px; margin-right: -2px;">
+      <span style="animation: kioto-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; position: absolute; inline-size: 100%; block-size: 100%; border-radius: 9999px; background-color: #22c55e; opacity: 0.75;"></span>
+      <span style="position: relative; display: inline-flex; border-radius: 9999px; height: 12px; width: 12px; background-color: #10b981;"></span>
+    </span>
+  </button>
+
+  <!-- Ventana Chat -->
+  <div id="kioto-chatbot-window" style="display: none; width: 380px; height: 585px; background: #ffffff; border: 1px solid #e4e4e7; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04); position: absolute; bottom: 72px; right: 0; overflow: hidden; flex-direction: column; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0; transform: translateY(15px);">
+    <iframe src="${portalUrl}/?embed=true" style="width: 100%; height: 100%; border: none; background: #f8fafc;" allow="geolocation; microphone; camera"></iframe>
+  </div>
+
+  <style>
+    @keyframes kioto-ping {
+      75%, 100% { transform: scale(2); opacity: 0; }
+    }
+    #kioto-chatbot-bubble:hover {
+      transform: scale(1.06);
+      background-color: #18181b;
+    }
+    #kioto-chatbot-bubble:active {
+      transform: scale(0.94);
+    }
+  </style>
+
+  <script>
+    (function() {
+      const bubble = document.getElementById('kioto-chatbot-bubble');
+      const windowChat = document.getElementById('kioto-chatbot-window');
+      const iconChat = document.getElementById('kioto-icon-chat');
+      const iconClose = document.getElementById('kioto-icon-close');
+      let isOpen = false;
+
+      bubble.addEventListener('click', () => {
+        isOpen = !isOpen;
+        if (isOpen) {
+          windowChat.style.display = 'flex';
+          setTimeout(() => {
+            windowChat.style.opacity = '1';
+            windowChat.style.transform = 'translateY(0)';
+          }, 20);
+          iconChat.style.display = 'none';
+          iconClose.style.display = 'block';
+        } else {
+          windowChat.style.opacity = '0';
+          windowChat.style.transform = 'translateY(15px)';
+          setTimeout(() => {
+            windowChat.style.display = 'none';
+          }, 250);
+          iconChat.style.display = 'block';
+          iconClose.style.display = 'none';
+        }
+      });
+    })();
+  <\/script>
+</div>`;
+
+                    const iframeCodeSnippet = `<iframe src="${portalUrl}/?embed=true" style="width: 100%; max-width: 450px; height: 600px; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" allow="geolocation; microphone; camera"></iframe>`;
+
+                    return (
+                      <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 animate-fade-in shadow-xs">
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900 flex items-center">
+                            <Terminal className="w-4 h-4 text-gray-800 mr-2" />
+                            Código de Integración para tu Página Web Oficial
+                          </h3>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Copia este fragmento HTML e insértalo en tu sitio web oficial. Éste responderá automáticamente de acuerdo al estado configurado en el switch superior.
+                          </p>
+                        </div>
+
+                        <div className="flex border-b border-gray-100 pb-1">
+                          <button
+                            onClick={() => { setEmbedTab('bubble'); setCopiedText(false); }}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors cursor-pointer ${embedTab === 'bubble' ? 'border-neutral-900 text-neutral-950 font-bold' : 'border-transparent text-gray-400 hover:text-gray-500'}`}
+                          >
+                            Burbuja Flotante Integrada (Recomendado)
+                          </button>
+                          <button
+                            onClick={() => { setEmbedTab('iframe'); setCopiedText(false); }}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors cursor-pointer ${embedTab === 'iframe' ? 'border-neutral-900 text-neutral-950 font-bold' : 'border-transparent text-gray-400 hover:text-gray-500'}`}
+                          >
+                            Iframe Embebido Estático
+                          </button>
+                        </div>
+
+                        <div className="relative">
+                          <pre className="bg-neutral-950 text-emerald-400 p-4 rounded-xl text-[10.5px] font-mono overflow-x-auto max-h-60 select-all border border-neutral-900/60 leading-relaxed whitespace-pre font-medium [tab-size:2]">
+                            {embedTab === 'bubble' ? bubbleCodeSnippet : iframeCodeSnippet}
+                          </pre>
+                          <button
+                            onClick={() => {
+                              const code = embedTab === 'bubble' ? bubbleCodeSnippet : iframeCodeSnippet;
+                              navigator.clipboard.writeText(code);
+                              setCopiedText(true);
+                              setTimeout(() => setCopiedText(false), 2000);
+                            }}
+                            className="absolute top-3 right-3 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white border border-white/20 hover:border-white/30 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center space-x-1 cursor-pointer animate-fade-in"
+                          >
+                            {copiedText ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>¡Copiado!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copiar Código</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-xs space-y-1.5 text-gray-600 leading-relaxed">
+                          <p className="font-bold text-gray-950 flex items-center select-none text-[12px]">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block mr-2 animate-ping" />
+                            Sincronización Inteligente de Estatus:
+                          </p>
+                          <p>
+                            Si el switch superior <strong>Chatbot de la Página Web</strong> está <strong>Encendido</strong>, los visitantes tendrán de inmediato una comunicación fluida en tiempo real con el asistente inteligente.
+                          </p>
+                          <p>
+                            Si está <strong>Apagado</strong>, se desactiva instantáneamente el agendamiento y los visitantes visualizarán de manera profesional el mensaje administrado: <strong className="text-neutral-950 bg-indigo-50/70 px-1.5 py-0.5 border border-indigo-100 rounded">"Seguimos mejorando, en un momento volvemos contigo."</strong>
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6 animate-fade-in">
                     <div>
