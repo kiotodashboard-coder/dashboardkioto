@@ -32,6 +32,7 @@ export interface ServicioMecanico {
   // New evidence/validation fields for mechanical process
   recepcionFoto?: string; // Base64 picture of vehicle reception
   recepcionFirmaCliente?: string; // Base64 signature of vehicle reception matching client
+  comentariosClienteRecepcion?: string; // Optional client comments on vehicle receipt
 
   deliveryFotoIdFront?: string; // Base64 identification photo front
   deliveryFotoIdBack?: string; // Base64 identification photo back

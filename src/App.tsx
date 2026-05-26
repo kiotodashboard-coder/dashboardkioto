@@ -65,20 +65,54 @@ export default function App() {
   const [isWhatsAppChatbotEnabled, setIsWhatsAppChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_whatsapp') !== 'false');
   const [isMessengerChatbotEnabled, setIsMessengerChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_messenger') !== 'false');
 
+  // Load chatbot server configuration on login/startup
+  useEffect(() => {
+    if (currentUser) {
+      customFetch('/api/config/chatbot')
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            setIsWebChatbotEnabled(data.web !== false);
+            setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
+            setIsMessengerChatbotEnabled(data.messenger !== false);
+            localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+            localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
+            localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+          }
+        })
+        .catch(err => console.error("Error fetching chatbot config:", err));
+    }
+  }, [currentUser]);
+
   const handleToggleWebChatbot = () => {
     const newVal = !isWebChatbotEnabled;
     setIsWebChatbotEnabled(newVal);
     localStorage.setItem('kioto_chatbot_web', String(newVal));
+    customFetch('/api/config/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ web: newVal, whatsapp: isWhatsAppChatbotEnabled, messenger: isMessengerChatbotEnabled })
+    }).catch(err => console.error(err));
   };
   const handleToggleWhatsAppChatbot = () => {
     const newVal = !isWhatsAppChatbotEnabled;
     setIsWhatsAppChatbotEnabled(newVal);
     localStorage.setItem('kioto_chatbot_whatsapp', String(newVal));
+    customFetch('/api/config/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ web: isWebChatbotEnabled, whatsapp: newVal, messenger: isMessengerChatbotEnabled })
+    }).catch(err => console.error(err));
   };
   const handleToggleMessengerChatbot = () => {
     const newVal = !isMessengerChatbotEnabled;
     setIsMessengerChatbotEnabled(newVal);
     localStorage.setItem('kioto_chatbot_messenger', String(newVal));
+    customFetch('/api/config/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ web: isWebChatbotEnabled, whatsapp: isWhatsAppChatbotEnabled, messenger: newVal })
+    }).catch(err => console.error(err));
   };
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
@@ -112,8 +146,8 @@ export default function App() {
   }, [activeTab]);
 
   // Help load database lists into state
-  const loadDashboardData = async () => {
-    setLoadingLists(true);
+  const loadDashboardData = async (isSilent = false) => {
+    if (!isSilent) setLoadingLists(true);
     try {
       const sRes = await customFetch('/api/servicios');
       
@@ -124,14 +158,18 @@ export default function App() {
     } catch (err) {
       console.error("Failed to fetch dashboard arrays:", err);
     } finally {
-      setLoadingLists(false);
+      if (!isSilent) setLoadingLists(false);
     }
   };
 
-  // Re-load on initial login state OR changes
+  // Re-load on initial login state OR changes, and set up a 4-second real-time short polling interval
   useEffect(() => {
     if (currentUser) {
       loadDashboardData();
+      const interval = setInterval(() => {
+        loadDashboardData(true);
+      }, 4000);
+      return () => clearInterval(interval);
     }
   }, [currentUser]);
 

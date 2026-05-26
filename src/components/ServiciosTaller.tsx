@@ -415,6 +415,13 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [comentariosMecanico, setComentariosMecanico] = useState('');
   const [recomendacionesMecanico, setRecomendacionesMecanico] = useState('');
 
+  // Recepcion dynamic customer comments state
+  const [comentariosClienteRecepcion, setComentariosClienteRecepcion] = useState('');
+
+  // Dynamic config & collapsible states
+  const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
+  const [checklistParts, setChecklistParts] = useState<string[]>([]);
+
   // Delivery input temporary storage
   const [deliveryFotoIdFront, setDeliveryFotoIdFront] = useState('');
   const [deliveryFotoIdBack, setDeliveryFotoIdBack] = useState('');
@@ -433,12 +440,20 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     slotIntervalMinutes: number;
     openingTime: string;
     closingTime: string;
+    checklistItems?: string[];
   } | null>(null);
 
   useEffect(() => {
     customFetch('/api/config/programming')
       .then(res => res.json())
-      .then(data => setProgConfig(data))
+      .then(data => {
+        setProgConfig(data);
+        if (data && data.checklistItems && Array.isArray(data.checklistItems)) {
+          setChecklistParts(data.checklistItems);
+        } else {
+          setChecklistParts(standardChecklistParts);
+        }
+      })
       .catch(err => console.error("Error loading prog parameters:", err));
   }, [services]);
 
@@ -449,6 +464,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         const photoVal = selectedServiceForModal.recepcionFoto || '';
         setRecepcionFoto(photoVal);
         setRecepcionFirmaCliente(selectedServiceForModal.recepcionFirmaCliente || '');
+        setComentariosClienteRecepcion(selectedServiceForModal.comentariosClienteRecepcion || '');
         setRecepcionStep('fotos');
         
         // Parse multi photos if applicable
@@ -470,7 +486,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         setRecomendacionesMecanico(selectedServiceForModal.recomendacionesMecanico || '');
         
         const initialCheck: Record<string, boolean> = {};
-        standardChecklistParts.forEach(p => {
+        const activeParts = checklistParts.length > 0 ? checklistParts : standardChecklistParts;
+        activeParts.forEach(p => {
           initialCheck[p] = selectedServiceForModal.checklist?.[p] ?? false;
         });
         setChecklist(initialCheck);
@@ -486,6 +503,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       // Clear
       setRecepcionFoto('');
       setRecepcionFirmaCliente('');
+      setComentariosClienteRecepcion('');
       setRecepcionStep('fotos');
       setRecepcionFotos([]);
       setChecklist({});
@@ -674,7 +692,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
     dispatchStatusUpdate(selectedServiceForModal.id, 'vehículo recibido', {
       recepcionFoto,
-      recepcionFirmaCliente
+      recepcionFirmaCliente,
+      comentariosClienteRecepcion
     });
     setSelectedServiceForModal(null);
     setModalType(null);
@@ -861,105 +880,125 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         
         {/* Left Form: Manual Booking */}
         <div className="lg:col-span-4">
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
-            <h3 className="text-xs font-extrabold tracking-wider text-gray-400 uppercase">Enrolar Cita en Sucursal</h3>
-            <form onSubmit={handleCreateService} className="space-y-4 pt-1">
-              
-              <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4 shadow-xs">
+            <div 
+              onClick={() => setIsCreateFormExpanded(!isCreateFormExpanded)} 
+              className="flex items-center justify-between cursor-pointer select-none"
+            >
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-black tracking-widest text-neutral-800 uppercase flex items-center gap-1.5">
+                  📝 Nuevo Servicio
+                </h3>
+                <p className="text-[10px] text-gray-500 font-medium font-sans">Click para agendar y capturar cita</p>
+              </div>
+              <div className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition" id="services-form-toggle-btn">
+                {isCreateFormExpanded ? (
+                  <span className="text-md font-bold text-gray-800">−</span>
+                ) : (
+                  <span className="text-md font-bold text-gray-800">+</span>
+                )}
+              </div>
+            </div>
+
+            {isCreateFormExpanded && (
+              <form onSubmit={handleCreateService} className="space-y-4 pt-4 border-t border-gray-100 animate-fade-in" id="workshop-manual-booking-form">
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Cliente</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre Completo"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Celular</label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="WhatsApp"
+                      value={clientPhone}
+                      onChange={(e) => setClientPhone(e.target.value)}
+                      className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Cliente</label>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Vehículo (Ficha/Modelo)</label>
                   <input
                     type="text"
                     required
-                    placeholder="Nombre Completo"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Kioto Hybrid XL 2025"
+                    value={vehicle}
+                    onChange={(e) => setVehicle(e.target.value)}
                     className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">NIV (Serie)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="17 Dígitos"
+                      maxLength={17}
+                      value={vin}
+                      onChange={(e) => setVin(e.target.value.toUpperCase())}
+                      className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs uppercase font-mono tracking-wider focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Placa</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. GHY-210-C"
+                      value={plate}
+                      onChange={(e) => setPlate(e.target.value.toUpperCase())}
+                      className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs uppercase font-mono tracking-wider focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Celular</label>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Servicio Requerido</label>
                   <input
-                    type="tel"
+                    type="text"
                     required
-                    placeholder="WhatsApp"
-                    value={clientPhone}
-                    onChange={(e) => setClientPhone(e.target.value)}
+                    placeholder="Mantenimiento Mayor 10,000 KM"
+                    value={serviceType}
+                    onChange={(e) => setServiceType(e.target.value)}
                     className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Vehículo (Ficha/Modelo)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Kioto Hybrid XL 2025"
-                  value={vehicle}
-                  onChange={(e) => setVehicle(e.target.value)}
-                  className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">NIV (Serie)</label>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Fecha Programada</label>
                   <input
-                    type="text"
+                    type="datetime-local"
                     required
-                    placeholder="17 Dígitos"
-                    maxLength={17}
-                    value={vin}
-                    onChange={(e) => setVin(e.target.value.toUpperCase())}
-                    className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs uppercase font-mono tracking-wider focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    value={appointmentDate}
+                    onChange={(e) => setAppointmentDate(e.target.value)}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none cursor-pointer"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Placa</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej. GHY-210-C"
-                    value={plate}
-                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                    className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs uppercase font-mono tracking-wider focus:ring-1 focus:ring-neutral-900 focus:outline-none"
-                  />
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Servicio Requerido</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Mantenimiento Mayor 10,000 KM"
-                  value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value)}
-                  className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
-                />
-              </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#131315] hover:bg-neutral-800 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-widest py-3.5 rounded-xl transition-colors cursor-pointer text-center"
+                >
+                  {loading ? 'Procesando...' : 'Dar de alta cita'}
+                </button>
 
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Fecha Programada</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={appointmentDate}
-                  onChange={(e) => setAppointmentDate(e.target.value)}
-                  className="w-full bg-white border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none cursor-pointer"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-[#131315] hover:bg-neutral-800 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-widest py-3.5 rounded-xl transition-colors cursor-pointer text-center"
-              >
-                {loading ? 'Procesando...' : 'Dar de alta cita'}
-              </button>
-
-            </form>
+              </form>
+            )}
           </div>
         </div>
 
@@ -1280,6 +1319,20 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                     heightAttr={260}
                   />
 
+                  {/* Customer reception comments input (per requirement 6: "comentarios del cliente al recibir el vehiculo, despues de la firma del cliente, por si quiere que se revise algo en especifico") */}
+                  <div className="space-y-1 pt-1.5 animate-fade-in">
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest select-none">
+                      📝 Comentarios / Solicitudes particulares del cliente:
+                    </label>
+                    <textarea
+                      value={comentariosClienteRecepcion}
+                      onChange={(e) => setComentariosClienteRecepcion(e.target.value)}
+                      rows={2.5}
+                      placeholder="Ingrese indicaciones especiales del cliente (ej. revisar ruido en suspensión delantera izquierda al pasar topes, testigo encendido de bolsas de aire)..."
+                      className="w-full bg-white border border-gray-250 text-gray-950 placeholder-gray-400 rounded-xl p-2.5 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none"
+                    />
+                  </div>
+
                   <div className="flex gap-3 pt-3">
                     <button
                       type="submit"
@@ -1347,7 +1400,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 
                 <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 max-h-56 overflow-y-auto shadow-inner select-none">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {standardChecklistParts.map((part) => (
+                     {(checklistParts.length > 0 ? checklistParts : standardChecklistParts).map((part) => (
                       <label 
                         key={part} 
                         className="flex items-center gap-2.5 p-2 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-350 rounded-lg cursor-pointer transition-colors"
@@ -1814,6 +1867,18 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
               </div>
             </div>
 
+            {/* Comentarios particulares de recepción (per requirement 6: "Añade comentarios del cliente al recibir el vehiculo, despues de la firma del cliente, por si quiere que se revise algo en especifico") */}
+            {printService.comentariosClienteRecepcion && (
+              <div className="border border-indigo-200 rounded-xl p-4 mb-5 bg-indigo-50/25">
+                <h4 className="text-[11px] font-black text-indigo-850 tracking-widest uppercase border-b border-indigo-200 pb-1.5 mb-2 select-none">
+                  📝 Instrucciones Especiales y Síntomas Reportados por el Cliente
+                </h4>
+                <p className="text-xs text-gray-800 font-medium italic leading-relaxed whitespace-pre-line select-text">
+                  "{printService.comentariosClienteRecepcion}"
+                </p>
+              </div>
+            )}
+
             {/* Evidencia fotográfica de recepción (Ampliada y más visible!) */}
             <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
@@ -1854,26 +1919,31 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 📋 Diagnóstico Completo y Checklist Técnico Vehicular
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 select-text text-xs">
-                {standardChecklistParts.map((part) => {
-                  const isChecked = printService.checklist?.[part];
-                  return (
-                    <div key={part} className="flex items-center text-[10.5px] justify-between py-1.5 border-b border-gray-100 font-medium leading-tight">
-                      <span className="text-gray-700">{part}</span>
-                      <div className="flex items-center space-x-1.5 shrink-0 ml-2">
-                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                          isChecked 
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700 font-extrabold text-[11px]' 
-                            : 'border-slate-300 bg-white text-transparent text-[11px]'
-                        }`}>
-                          {isChecked ? '✓' : ''}
+                {(() => {
+                  const configured = checklistParts.length > 0 ? checklistParts : standardChecklistParts;
+                  const customizedKeys = Object.keys(printService.checklist || {});
+                  const allKeys = Array.from(new Set([...configured, ...customizedKeys]));
+                  return allKeys.map((part) => {
+                    const isChecked = printService.checklist?.[part];
+                    return (
+                      <div key={part} className="flex items-center text-[10.5px] justify-between py-1.5 border-b border-gray-100 font-medium leading-tight">
+                        <span className="text-gray-700">{part}</span>
+                        <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                            isChecked 
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-700 font-extrabold text-[11px]' 
+                              : 'border-slate-300 bg-white text-transparent text-[11px]'
+                          }`}>
+                            {isChecked ? '✓' : ''}
+                          </div>
+                          <span className={`text-[9px] font-black uppercase tracking-wide tracking-tight shrink-0 ${isChecked ? 'text-emerald-800 font-black' : 'text-gray-400'}`}>
+                            {isChecked ? 'Atendido' : 'Excelente'}
+                          </span>
                         </div>
-                        <span className={`text-[9px] font-black uppercase tracking-wide tracking-tight shrink-0 ${isChecked ? 'text-emerald-800 font-black' : 'text-gray-400'}`}>
-                          {isChecked ? 'Atendido' : 'Excelente'}
-                        </span>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
 
