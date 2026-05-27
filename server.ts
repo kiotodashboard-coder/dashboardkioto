@@ -860,7 +860,6 @@ app.post("/api/ai/validate-id", async (req, res) => {
   }
 
   try {
-    // Strip header if present
     const cleanImage64 = image64.replace(/^data:image\/\w+;base64,/, "");
     const mimeMatch = image64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
@@ -885,27 +884,26 @@ app.post("/api/ai/validate-id", async (req, res) => {
         isValid: true,
         idType: "INE",
         confidence: 0.98,
-        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. Se detectaron hologramas oficiales, fotografía de rostro y coincidencia estructural de INE/IFE (Lado: ${side === 'back' ? 'Reverso' : 'Frente'}).`
+        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. (Lado: ${side === 'back' ? 'Reverso' : 'Frente'}).`
       });
     }
 
-    const prompt = `Analiza con el MÁXIMO RIGOR POSIBLE esta fotografía de forma estricta. Determina con absoluta seguridad si corresponde a una identificación oficial mexicana real, vigente y legible (ej. INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
+    const prompt = `Analiza con flexibilidad esta fotografía. Determina si parece ser un documento de identificación oficial real y legible (ej. INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
     
-Para que sea marcada como VÁLIDA (isValid: true), es OBLIGATORIO que se observe un documento oficial real. 
+Sé sumamente comprensivo con las condiciones de iluminación, enfoque medio o si una mano del asesor está sosteniendo el documento físico frente a la cámara en el taller mecánico. 
 
-REGLAS CRÍTICAS DE RECHAZO (Debe retornar isValid: false):
-1. Si la foto muestra una mano sola, un teclado, un mouse, una computadora, una pared, un piso, un zapato, plantas, coches, o cualquier objeto cotidiano sin el documento de identidad física, DEBES responder 'isValid: false'.
-2. Si el documento está borroso, ilegible, cortado o no se puede leer, DEBES responder 'isValid: false'.
-3. Si la foto es de una persona completa, su rostro sin el documento físico, o una selfie ordinaria sin mostrar la tarjeta ID oficial frente a la cámara, DEBES responder 'isValid: false'.
-4. Si el 'side' solicitado es 'front' y NO se visualiza la foto del titular o los datos delanteros, DEBES responder 'isValid: false'.
-5. Si el 'side' solicitado es 'back' y NO se visualiza la franja magnética, los códigos de barra o las firmas, DEBES responder 'isValid: false'.
+Para que sea marcada como VÁLIDA (isValid: true), es suficiente con que se visualice un documento que guarde el formato o estructura visual de una identificación oficial por el lado solicitado (lado frontal con foto de perfil o reverso con franja magnética/firmas).
 
-Si es un documento válido, responde con 'idType' correspondiente ("INE", "Licencia de conducir", "Cédula profesional" o "Cartilla militar"). Si no lo es, responde con 'idType': "Desconocido" e indica detalladamente la causa del rechazo de manera profesional en el 'message'.
+REGLAS DE RECHAZO (isValid: false):
+- Únicamente si la foto claramente NO contiene ningún documento de identidad (por ejemplo, es una foto de una pared vacía, una computadora, el piso de taller o un objeto completamente ajeno sin ninguna tarjeta de identidad visible).
+
+Si se asemeja a una identificación oficial válida, responde con isValid: true e indica el 'idType' correspondiente ("INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar" o "Otro"). Si es inválida por no tener documento alguno, responde con 'idType': "Desconocido" e indica la causa de manera breve en el 'message'.
+
 Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes propiedades:
-- isValid: (Booleano) true o false de acuerdo con el análisis rigoroso.
-- idType: (Cadena) "INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar" o "Desconocido".
+- isValid: (Booleano) true o false de acuerdo con este análisis flexible.
+- idType: (Cadena) "INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar", "Otro" o "Desconocido".
 - confidence: (Número de 0 a 1) nivel de confianza de la clasificación.
-- message: (Cadena) Explicación detallada del diagnóstico en español.`;
+- message: (Cadena) Explicación del diagnóstico en español.`;
 
     const imagePart = {
       inlineData: {

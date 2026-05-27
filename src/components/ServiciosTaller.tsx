@@ -276,70 +276,71 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }:
   const hasLocalPreview = !fluidMulti && preview;
 
   return (
-    <div className="bg-slate-50 p-3 rounded-xl border border-gray-250/70 space-y-2.5">
-      <div className="flex justify-between items-center select-none">
-        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{label}</span>
-        {hasLocalPreview && <span className="text-[10px] text-emerald-800 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-150">📷 CAPTURADA</span>}
-        {fluidMulti && isCameraActive && <span className="text-[10px] text-indigo-800 font-extrabold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150 animate-pulse">🔴 EN VIVO</span>}
+    <div className="bg-slate-50 p-4 rounded-2xl border border-gray-250/70 space-y-3.5 shadow-sm">
+      <div className="flex justify-between items-center select-none animate-fade-in">
+        <span className="text-xs font-black text-slate-800 uppercase tracking-wider">{label}</span>
+        {hasLocalPreview && <span className="text-[10px] text-emerald-850 font-extrabold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 shadow-xs">📷 CAPTURADA</span>}
+        {fluidMulti && isCameraActive && <span className="text-[10px] text-indigo-800 font-extrabold bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200 animate-pulse">🔴 EN VIVO</span>}
       </div>
 
       {hasLocalPreview && (
-        <div className="relative border border-gray-200 bg-neutral-900 rounded-lg overflow-hidden max-h-40 flex items-center justify-center">
-          <img src={preview!} alt="Vista previa" className="max-h-40 object-contain text-[10px] text-white italic" referrerPolicy="no-referrer" />
+        <div className="relative border border-gray-300 bg-neutral-900 rounded-xl overflow-hidden min-h-[260px] md:min-h-[360px] flex items-center justify-center shadow-md animate-fade-in">
+          <img src={preview!} alt="Vista previa" className="max-h-[380px] md:max-h-[500px] w-full object-contain text-[10px] text-white italic" referrerPolicy="no-referrer" />
           <button
             type="button"
             onClick={() => {
               setPreview(null);
               onCapture('');
             }}
-            className="absolute top-2 right-2 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-1 cursor-pointer transition-colors shadow-md"
+            className="absolute top-3 right-3 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-2 cursor-pointer transition-colors shadow-lg z-10 hover:scale-105 active:scale-95 duration-100"
             title="Eliminar foto"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {!hasLocalPreview && !isCameraActive && (
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={startStreaming}
-              className={`bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-bold py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${hideUpload ? 'w-full flex-grow' : 'flex-1'}`}
+              className={`bg-slate-950 hover:bg-slate-850 text-white text-[11px] font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow cursor-pointer ${hideUpload ? 'w-full flex-grow' : 'flex-1'}`}
             >
-              <Camera className="w-4 h-4" />
+              <Camera className="w-4 h-4 text-emerald-400" />
               <span>Cámara en Vivo</span>
             </button>
             {!hideUpload && (
-              <label className="flex-1 bg-white hover:bg-slate-50 border border-gray-250 text-gray-700 text-[11px] font-bold py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center">
-                <Download className="w-4 h-4 rotate-180" />
+              <label className="flex-1 bg-white hover:bg-slate-50 border border-gray-250 text-gray-700 text-[11px] font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all hover:shadow cursor-pointer text-center">
+                <Download className="w-4 h-4 rotate-180 text-indigo-505" />
                 <span>Cargar Imagen</span>
                 <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
               </label>
             )}
           </div>
-          {cameraError && <p className="text-[10px] leading-snug font-medium text-amber-700">{cameraError}</p>}
+          {cameraError && <p className="text-[10px] leading-snug font-medium text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-100">{cameraError}</p>}
         </div>
       )}
 
       {isCameraActive && (
-        <div className="space-y-2.5">
-          <div className="relative bg-black rounded-lg overflow-hidden aspect-video flex items-center justify-center transition-all duration-75">
+        <div className="space-y-3 animate-fade-in">
+          <div className="relative bg-black rounded-xl overflow-hidden aspect-[4/3] w-full min-h-[300px] md:min-h-[440px] shadow-inner flex items-center justify-center border border-slate-350">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-white/20 m-4 rounded-lg"></div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={snapPhoto}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer shadow-xs uppercase tracking-wider"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-3.5 rounded-xl transition-all cursor-pointer shadow-md uppercase tracking-wider hover:scale-[1.01] active:scale-98"
             >
               Tomar Foto
             </button>
             <button
               type="button"
               onClick={stopStreaming}
-              className="bg-gray-300 hover:bg-gray-400 text-gray-800 text-xs font-bold py-2.5 px-3 rounded-lg transition-colors cursor-pointer"
+              className="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold py-3.5 px-4 rounded-xl transition-all cursor-pointer"
             >
               Cerrar Cámara
             </button>
@@ -452,6 +453,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [isValidatingFront, setIsValidatingFront] = useState(false);
   const [isValidatingBack, setIsValidatingBack] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [tempB64, setTempB64] = useState('');
 
   // Core printable viewer parameters
   const [printService, setPrintService] = useState<ServicioMecanico | null>(null);
@@ -1638,8 +1640,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                       onCapture={async (b64) => {
                         if (!b64) {
                           setDeliveryFotoIdFront('');
+                          setTempB64('');
                           return;
                         }
+                        setTempB64(b64);
                         setIsValidatingFront(true);
                         setValidationError('');
                         try {
@@ -1651,6 +1655,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           const data = await res.json();
                           if (data.isValid) {
                             setDeliveryFotoIdFront(b64);
+                            setTempB64('');
                             triggerAlertPop(`Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó con éxito.'}`, "Verificación Exitosa", "success");
                             setDeliveryStep('doc-back');
                           } else {
@@ -1675,6 +1680,28 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   {validationError && (
                     <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
                       {validationError}
+                    </div>
+                  )}
+
+                  {validationError && tempB64 && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm animate-fade-in">
+                      <p className="font-semibold flex items-center gap-1.5">
+                        <span>⚠️</span>
+                        <span>¿La identificación es correcta pero la IA la rechaza?</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeliveryFotoIdFront(tempB64);
+                          setTempB64('');
+                          setValidationError('');
+                          triggerAlertPop("Identificación frontal aprobada manualmente por el Asesor.", "Aprobación Manual", "success");
+                          setDeliveryStep('doc-back');
+                        }}
+                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-[10.5px] uppercase tracking-wider cursor-pointer shadow-xs"
+                      >
+                        Aprobar Captura Manualmente de Frente y Avanzar
+                      </button>
                     </div>
                   )}
 
@@ -1710,8 +1737,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                       onCapture={async (b64) => {
                         if (!b64) {
                           setDeliveryFotoIdBack('');
+                          setTempB64('');
                           return;
                         }
+                        setTempB64(b64);
                         setIsValidatingBack(true);
                         setValidationError('');
                         try {
@@ -1723,6 +1752,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           const data = await res.json();
                           if (data.isValid) {
                             setDeliveryFotoIdBack(b64);
+                            setTempB64('');
                             triggerAlertPop(`Identificación Válida: Lado Reverso verificado correctamente.`, "Verificación Exitosa", "success");
                             setDeliveryStep('firma-cliente');
                           } else {
@@ -1747,6 +1777,28 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   {validationError && (
                     <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
                       {validationError}
+                    </div>
+                  )}
+
+                  {validationError && tempB64 && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm animate-fade-in">
+                      <p className="font-semibold flex items-center gap-1.5">
+                        <span>⚠️</span>
+                        <span>¿El reverso es correcto pero la IA lo rechaza?</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeliveryFotoIdBack(tempB64);
+                          setTempB64('');
+                          setValidationError('');
+                          triggerAlertPop("Reverso de identificación aprobado manualmente por el Asesor.", "Aprobación Manual", "success");
+                          setDeliveryStep('firma-cliente');
+                        }}
+                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-[10.5px] uppercase tracking-wider cursor-pointer shadow-xs"
+                      >
+                        Aprobar Captura Manualmente de Reverso y Avanzar
+                      </button>
                     </div>
                   )}
 
