@@ -130,7 +130,18 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
   if (url === "/api/servicios" && method === "GET") {
     try {
       const snap = await getDocs(collection(dbClient, "servicios"));
-      const servicios = snap.docs.map(d => d.data());
+      const rawServicios = snap.docs.map(d => d.data());
+      
+      const offsetMs = -6 * 60 * 60 * 1000;
+      const localToday = new Date(new Date().getTime() + offsetMs);
+      const oneDayBefore = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
+      const thresholdStr = oneDayBefore.toISOString().slice(0, 10);
+      
+      const servicios = rawServicios.filter((s: any) => {
+        if (!s.appointmentDate) return false;
+        return s.appointmentDate.slice(0, 10) >= thresholdStr;
+      });
+
       servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       return new MockResponse(servicios);
     } catch (err: any) {
@@ -577,7 +588,15 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
     // Fetch all services to detect if they already have an appointment
     const serviciosSnap = await getDocs(collection(dbClient, "servicios"));
-    const allServicios = serviciosSnap.docs.map(d => d.data());
+    const rawServicios = serviciosSnap.docs.map(d => d.data());
+    const offsetMs = -6 * 60 * 60 * 1000;
+    const localToday = new Date(new Date().getTime() + offsetMs);
+    const oneDayBefore = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
+    const limitStr = oneDayBefore.toISOString().slice(0, 10);
+    const allServicios = rawServicios.filter((s: any) => {
+      if (!s.appointmentDate) return false;
+      return s.appointmentDate.slice(0, 10) >= limitStr;
+    });
 
     const cleanSessionPhone = clientPhoneOrId.replace(/\D/g, "");
     let matchedService: any = null;
@@ -716,7 +735,15 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
     // 2. Fetch current Servicios to prevent slot overbooking
     const serviciosSnap = await getDocs(collection(dbClient, "servicios"));
-    const allServicios = serviciosSnap.docs.map(d => d.data());
+    const rawServicios = serviciosSnap.docs.map(d => d.data());
+    const offsetMs = -6 * 60 * 60 * 1000;
+    const localToday = new Date(new Date().getTime() + offsetMs);
+    const oneDayBefore = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
+    const limitStr = oneDayBefore.toISOString().slice(0, 10);
+    const allServicios = rawServicios.filter((s: any) => {
+      if (!s.appointmentDate) return false;
+      return s.appointmentDate.slice(0, 10) >= limitStr;
+    });
 
     const generateSlots = (openT: string, closeT: string, intervalMin: number): string[] => {
       const slots: string[] = [];
@@ -792,40 +819,148 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       gathered.alreadyRegistered = "true";
     }
 
-    if (activeServiceFound && !gathered.serviceCheckedAlready) {
-      botReply = `¡Hola! He verificado tu número en nuestro sistema Kioto Auto y encontré que tienes un servicio activo/agendado con nosotros:
-      
-🚗 *Vehículo*: ${activeServiceFound.vehicle}
-🏷 *Placas*: ${activeServiceFound.plate || "No registradas"}
-🛠 *Servicio*: ${activeServiceFound.serviceType}
-📅 *Fecha*: ${activeServiceFound.appointmentDate.replace("T", " a las ")}
-📈 *Estatus*: 🟢 ${activeServiceFound.status.toUpperCase()}
-
-¿Te gustaría agendar **otro servicio adicional** para este o para algún otro automóvil? (Por favor responde **SÍ** para iniciar el nuevo registro).`;
-      gathered.serviceCheckedAlready = "true";
-      gathered.awaitingNewBookingConfirmation = "true";
-    } else if (gathered.awaitingNewBookingConfirmation === "true") {
-      delete gathered.awaitingNewBookingConfirmation;
-      if (textLower.includes("sí") || textLower.includes("si") || textLower.includes("ok") || textLower.includes("correcto") || textLower.includes("claro") || textLower.includes("otro")) {
-        botReply = `¡Excelente! Vamos a registrar tu nueva cita de servicio mecánico. ¿Cuál es tu nombre completo para esta nueva cita?`;
-      } else {
-        botReply = `Entendido. Te confirmamos que tu cita ya registrada sigue activa y programada con éxito en nuestro taller Kioto Auto. ¡Te esperamos!`;
+    const digitsOnly = userText.replace(/\D/g, "");
+    let detectedPhone = "";
+    if (digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+      detectedPhone = digitsOnly;
+    } else {
+      const tenDigitsMatch = digitsOnly.match(/\d{10,15}/);
+      if (tenDigitsMatch) {
+        detectedPhone = tenDigitsMatch[0];
       }
-    } else if (!gathered.clientName) {
+    }
+
+    const getPhoneStatusStringFallback = (phoneToLookup: string, allServBackupArr: any[]) => {
+      const targetLast10Clean = phoneToLookup.replace(/\D/g, "").slice(-10);
+      const matchedList = allServBackupArr.filter((s: any) => {
+        if (!s.clientPhone) return false;
+        const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
+        return sPhoneCleaned.endsWith(targetLast10Clean);
+      });
+      if (matchedList.length === 0) {
+        return `No se encontraron servicios agendados para el número de teléfono ${phoneToLookup}.`;
+      }
+      let out = `He encontrado los siguientes servicios agendados al número **${phoneToLookup}**:\n`;
+      matchedList.forEach((s: any, idx: number) => {
+        out += `\n**Servicio #${idx + 1}**\n🚗 *Vehículo*: ${s.vehicle || "Urbano"}\n🏷️ *Placa*: ${s.plate || "S/PLACA"}\n🛠️ *Servicio*: ${s.serviceType || "Mantenimiento"}\n📅 *Fecha*: ${(s.appointmentDate || "").replace('T', ' a las ')}\n📈 *Estatus*: ${String(s.status || "agendado").toUpperCase()}\n`;
+      });
+      return out;
+    };
+
+    if (gathered.awaitingHelpConfirmation === "true") {
+      if (textLower.includes("agendar") || textLower.includes("otro") || textLower.includes("1") || textLower.includes("nuevo")) {
+        // Reset booking details but keep phone & name
+        delete gathered.serviceType;
+        delete gathered.vehicle;
+        delete gathered.plate;
+        delete gathered.vin;
+        delete gathered.tempDate;
+        delete gathered.appointmentDate;
+        delete gathered.confirmed;
+        delete gathered.bookingCompleted;
+        delete gathered.awaitingHelpConfirmation;
+        delete gathered.awaitingStatusConfirmSameNumber;
+        delete gathered.awaitingNewStatusPhone;
+        delete gathered.awaitingWhatToDo;
+        delete gathered.serviceCheckedAlready;
+
+        botReply = `¡Excelente! Vamos a registrar tu nueva cita de servicio mecánico para el mismo número de contacto (${gathered.clientPhone}).\n\n¿Qué tipo de servicio o mantenimiento mecánico requiere su vehículo? (Por ejemplo: afinación, cambio de aceite o revisión de frenos).`;
+      } else if (textLower.includes("estatus") || textLower.includes("validar") || textLower.includes("2") || textLower.includes("consultar") || textLower.includes("status")) {
+        delete gathered.awaitingHelpConfirmation;
+        botReply = `¿Estatus de vehículos registrados a este número?`;
+        gathered.awaitingStatusConfirmSameNumber = "true";
+      } else {
+        botReply = `¡De nada! Ha sido un placer atenderte hoy en Automotriz Kioto. Recuerda que puedes explorar más opciones de Automotriz Kioto en nuestro portal.`;
+      }
+    } 
+    // 1b. Check if we are waiting for the confirmation to check the SAME number
+    else if (gathered.awaitingStatusConfirmSameNumber === "true") {
+      delete gathered.awaitingStatusConfirmSameNumber;
+      if (textLower.includes("si") || textLower.includes("sí") || textLower.includes("ok") || textLower.includes("correcto") || textLower.includes("claro")) {
+        const lookupP = gathered.clientPhone || cleanSessionPhone;
+        const statusText = getPhoneStatusStringFallback(lookupP, allServicios);
+        botReply = `${statusText}\n\n¿Puedo ayudarte en algo más hoy?`;
+        gathered.awaitingHelpConfirmation = "true";
+      } else {
+        botReply = `Entendido. Por favor indique el nuevo número de Teléfono Celular/WhatsApp de 10 dígitos para ver los servicios agendados de ese número:`;
+        gathered.awaitingNewStatusPhone = "true";
+      }
+    }
+    // 1c. Check if we are waiting for a NEW telephone to check status
+    else if (gathered.awaitingNewStatusPhone === "true") {
+      if (detectedPhone) {
+        const statusText = getPhoneStatusStringFallback(detectedPhone, allServicios);
+        botReply = `${statusText}\n\n¿Puedo ayudarte en algo más hoy?`;
+        gathered.clientPhone = detectedPhone; // sync to the new phone
+        gathered.awaitingHelpConfirmation = "true";
+        delete gathered.awaitingNewStatusPhone;
+      } else {
+        botReply = `El formato del número no parece válido. Por favor proporcione un número de teléfono válido de 10 dígitos:`;
+      }
+    }
+    // 2. Check if the user is answering what to do (Awaiting What To Do after phone was entered)
+    else if (gathered.awaitingWhatToDo === "true") {
+      delete gathered.awaitingWhatToDo;
+      if (textLower.includes("agendar") || textLower.includes("1") || textLower.includes("nuevo")) {
+        gathered.selectedAction = "agendar";
+        botReply = `¡Excelente! Vamos a registrar tu nueva cita de servicio mecánico para el número de contacto (${gathered.clientPhone}).\n\nAhora por favor proporcione los datos de su vehículo: **Marca, Modelo y Año** (por ejemplo: Kioto Hybrid 2025).`;
+      } else if (textLower.includes("estatus") || textLower.includes("2") || textLower.includes("consultar") || textLower.includes("validar") || textLower.includes("status")) {
+        gathered.selectedAction = "status";
+        const lookupP = gathered.clientPhone || cleanSessionPhone;
+        const statusText = getPhoneStatusStringFallback(lookupP, allServicios);
+        botReply = `${statusText}\n\n¿Puedo ayudarte en algo más hoy?`;
+        gathered.awaitingHelpConfirmation = "true";
+      } else {
+        // Reprompt
+        botReply = `Por favor proporcione qué desea hacer:\n1. **Agendar servicio** (por ejemplo: afinación, cambio de aceite, lavado)\n2. **Consultar estatus de un servicio**`;
+        gathered.awaitingWhatToDo = "true";
+      }
+    }
+    // 3. Normal initial steps: Name has not been set yet
+    else if (!gathered.clientName) {
       gathered.clientName = userText;
       if (clientPhoneOrId && clientPhoneOrId.startsWith("cli-")) {
-        botReply = `Mucho gusto, *${userText}*. ¿Me indicas también tu número de Teléfono Celular/WhatsApp de 10 dígitos para enviarte la confirmación?`;
-      } else {
-        gathered.clientPhone = clientPhoneOrId;
         botReply = `Mucho gusto, *${userText}*. ¿Qué tipo de servicio o mantenimiento mecánico requiere su vehículo? (Por ejemplo: afinación, cambio de aceite o revisión de frenos).`;
+      } else {
+        // They already have clientPhoneOrId as a phone! Set it and see if it has services
+        gathered.clientPhone = clientPhoneOrId;
+        const phoneLast10 = clientPhoneOrId.replace(/\D/g, "").slice(-10);
+        const matchedList = allServicios.filter((s: any) => s.clientPhone && s.clientPhone.replace(/\D/g, "").endsWith(phoneLast10));
+        
+        if (matchedList.length > 0) {
+          const listText = matchedList.map((s: any) => `- ${s.serviceType} para auto ${s.vehicle} (Fecha: ${s.appointmentDate.replace('T', ' a las ')}. Estatus: ${s.status.toUpperCase()})`).join('\n');
+          botReply = `Mucho gusto, *${userText}*. Hemos verificado su número y encontramos que tiene servicios agendados con nosotros:\n\n${listText}\n\n¿Qué desea hacer?\n1. **Agendar servicio** (ejemplos: afinación, cambio de aceite, lavado)\n2. **Consultar estatus de un servicio**`;
+        } else {
+          botReply = `Mucho gusto, *${userText}*. ¿Qué desea hacer?\n1. **Agendar servicio** (ejemplos: afinación, cambio de aceite, lavado)\n2. **Consultar estatus de un servicio**`;
+        }
+        gathered.awaitingWhatToDo = "true";
       }
-    } else if (!gathered.clientPhone && clientPhoneOrId && clientPhoneOrId.startsWith("cli-")) {
-      gathered.clientPhone = userText;
-      botReply = `Gracias por registrar tu número: *${userText}*.\n\n¿Qué tipo de servicio o mantenimiento mecánico requiere su vehículo? (Por ejemplo: afinación, cambio de aceite o revisión de frenos).`;
-    } else if (!gathered.serviceType) {
+    }
+    // 4. Service Type has not been set yet
+    else if (!gathered.serviceType) {
       gathered.serviceType = userText;
-      botReply = `Entendido, servicio para *${userText}*.\n\nAhora por favor proporcione los datos de su vehículo: **Marca, Modelo y Año** (por ejemplo: Kioto Hybrid 2025).`;
-    } else if (!gathered.vehicle) {
+      botReply = `Gracias, registrado: **${userText}**.\n\n¿Me indicas también tu número de Teléfono Celular/WhatsApp de 10 dígitos para enviarte la confirmación del servicio?`;
+    }
+    // 5. ClientPhone has not been set yet
+    else if (!gathered.clientPhone) {
+      if (detectedPhone) {
+        gathered.clientPhone = detectedPhone;
+        const phoneLast10 = detectedPhone.slice(-10);
+        const matchedList = allServicios.filter((s: any) => s.clientPhone && s.clientPhone.replace(/\D/g, "").endsWith(phoneLast10));
+        
+        if (matchedList.length > 0) {
+          const listText = matchedList.map((s: any) => `- ${s.serviceType} para auto ${s.vehicle} (Fecha: ${s.appointmentDate.replace('T', ' a las ')}. Estatus: ${s.status.toUpperCase()})`).join('\n');
+          botReply = `Gracias por registrar tu número: *${detectedPhone}*. Hemos verificado su número y encontramos que tiene servicios agendados con nosotros:\n\n${listText}\n\n¿Qué desea hacer?\n1. **Agendar servicio** (ejemplos: afinación, cambio de aceite, lavado)\n2. **Consultar estatus de un servicio**`;
+        } else {
+          botReply = `Gracias por registrar tu número: *${detectedPhone}*.\n\n¿Qué desea hacer?\n1. **Agendar servicio** (ejemplos: afinación, cambio de aceite, lavado)\n2. **Consultar estatus de un servicio**`;
+        }
+        gathered.awaitingWhatToDo = "true";
+      } else {
+        botReply = `Por favor indica un número de teléfono celular válido de 10 dígitos:`;
+      }
+    }
+    // 6. Rest of booking sequence (vehicle, plate, vin, etc.)
+    else if (!gathered.vehicle) {
       gathered.vehicle = userText;
       botReply = `Registrado: *${userText}*.\n\nPor favor proporcione el número de **Placa** de circulación del vehículo.`;
     } else if (!gathered.plate) {
@@ -938,7 +1073,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
         await setDoc(doc(dbClient, "servicios", id), newServicio);
         bookingOutcome = true;
-        session.isFinished = true;
+        gathered.bookingCompleted = true;
 
         // Format WhatsApp notification details
         const formattedDate = proposedFull.replace("T", " a las ");
@@ -947,8 +1082,24 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
         botReply = `¡Felicidades, **${gathered.clientName}**! Tu cita para **${gathered.serviceType}** ha sido registrada con éxito para el día y hora seleccionados:\n\n📅 **${formattedDate}**\n🚗 **Auto**: ${gathered.vehicle}\n🏷️ **Placa**: ${gathered.plate}\n⚙️ Estatus: *Servicio Agendado*\n\nTe acabamos de enviar una confirmación automática completa a tu WhatsApp con los detalles del técnico asignado y las garantías oficiales. ¿Puedo ayudarte en alguna otra consulta hoy?`;
       }
+    } else if (gathered.bookingCompleted) {
+      botReply = `¡De nada! Ha sido un placer atenderte hoy en Automotriz Kioto. Recuerda que puedes explorar más opciones de Automotriz Kioto en nuestro portal.`;
     } else {
       botReply = `¡Hola! Tu cita de taller ya está programada. Deseas información de precios o de alguna otra orden de servicio técnica?`;
+    }
+
+    if (botReply && (botReply.includes("¿Puedo ayudarte") || botReply.includes("ayudarlo en algo mas") || botReply.includes("ayudarlo en algo más") || botReply.includes("ayudarte en alguna otra"))) {
+      gathered.awaitingHelpConfirmation = "true";
+    }
+
+    if (gathered && gathered.bookingCompleted && botReply && !botReply.includes("¿Puedo ayudarte") && gathered.awaitingHelpConfirmation !== "true") {
+      const phrase = "Tu asistente Kioto reiniciara esta conversación enseguida";
+      if (!botReply.includes(phrase)) {
+        botReply = botReply.trim() + "\n\n" + phrase;
+      }
+      session.appointmentType = null;
+      session.gatheredData = {};
+      session.isFinished = true;
     }
 
     session.gatheredData = gathered;
