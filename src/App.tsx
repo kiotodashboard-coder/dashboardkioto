@@ -34,7 +34,8 @@ import {
   Copy
 } from 'lucide-react';
 import { User as UserType, ServicioMecanico } from './types';
-import { customFetch } from './utils/api';
+import { doc, onSnapshot } from "firebase/firestore";
+import { dbClient, customFetch } from './utils/api';
 import AdminPanel from './components/AdminPanel';
 import AsesorForm from './components/AsesorForm';
 import ServiciosTaller from './components/ServiciosTaller';
@@ -67,21 +68,22 @@ export default function App() {
   const [isWhatsAppChatbotEnabled, setIsWhatsAppChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_whatsapp') !== 'false');
   const [isMessengerChatbotEnabled, setIsMessengerChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_messenger') !== 'false');
 
-  // Load chatbot server configuration on startup
+  // Load chatbot server configuration in real-time
   useEffect(() => {
-    customFetch('/api/config/chatbot')
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          setIsWebChatbotEnabled(data.web !== false);
-          setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
-          setIsMessengerChatbotEnabled(data.messenger !== false);
-          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
-          localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
-          localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
-        }
-      })
-      .catch(err => console.error("Error fetching chatbot config:", err));
+    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsWebChatbotEnabled(data.web !== false);
+        setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
+        setIsMessengerChatbotEnabled(data.messenger !== false);
+        localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+        localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
+        localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+      }
+    }, (err) => {
+      console.error("Error in chatbot config listener:", err);
+    });
+    return () => unsub();
   }, []);
 
   const handleToggleWebChatbot = () => {
@@ -860,15 +862,20 @@ export default function App() {
   <!-- Botón Burbuja -->
   <button id="kioto-chatbot-bubble" style="width: 56px; height: 56px; border-radius: 50%; background: #000000; border: 1px solid #27272a; color: #ffffff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); transition: all 0.2s ease; outline: none; position: relative;">
     <!-- Icono Chat (Burbuja) -->
-    <svg id="kioto-icon-chat" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"></path></svg>
+    <svg id="kioto-icon-chat" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
     <!-- Icono Cerrar (X) -->
-    <svg id="kioto-icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: none; transition: transform 0.2s ease;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    <svg id="kioto-icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none; transition: transform 0.2s ease;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     <!-- Notificación de Actividad -->
-    <span style="position: absolute; top: 0; right: 0; display: flex; height: 12px; width: 12px; margin-top: -2px; margin-right: -2px;">
-      <span style="animation: kioto-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; position: absolute; inline-size: 100%; block-size: 100%; border-radius: 9999px; background-color: #22c55e; opacity: 0.75;"></span>
-      <span style="position: relative; display: inline-flex; border-radius: 9999px; height: 12px; width: 12px; background-color: #10b981;"></span>
+    <span style="position: absolute; top: 2px; right: 2px; display: flex; height: 12px; width: 12px;">
+      <span style="animation: kioto-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; position: absolute; inline-size: 100%; block-size: 100%; border-radius: 9999px; background-color: #a1a1aa; opacity: 0.75;"></span>
+      <span style="position: relative; display: inline-flex; border-radius: 9999px; height: 12px; width: 12px; background-color: #71717a;"></span>
     </span>
   </button>
+
+  <!-- Tooltip Informativo -->
+  <div id="kioto-chatbot-tooltip" style="position: absolute; right: 72px; top: 10px; background: #18181b; color: #ffffff; text-shadow: none; font-size: 11px; font-weight: bold; padding: 6px 12px; border-radius: 8px; white-space: nowrap; pointer-events: none; opacity: 0; transform: translateX(10px); transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid #27272a; letter-spacing: 0.5px;">
+    ¿Agendar Cita de Taller? ¡Chatea aquí!
+  </div>
 
   <!-- Ventana Chat -->
   <div id="kioto-chatbot-window" style="display: none; width: 380px; height: 585px; background: #ffffff; border: 1px solid #e4e4e7; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04); position: absolute; bottom: 72px; right: 0; overflow: hidden; flex-direction: column; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0; transform: translateY(15px);">
@@ -880,11 +887,15 @@ export default function App() {
       75%, 100% { transform: scale(2); opacity: 0; }
     }
     #kioto-chatbot-bubble:hover {
-      transform: scale(1.06);
+      transform: scale(1.05);
       background-color: #18181b;
     }
     #kioto-chatbot-bubble:active {
-      transform: scale(0.94);
+      transform: scale(0.95);
+    }
+    #kioto-chatbot-bubble:hover ~ #kioto-chatbot-tooltip {
+      opacity: 1;
+      transform: translateX(0);
     }
   </style>
 
@@ -894,6 +905,7 @@ export default function App() {
       const windowChat = document.getElementById('kioto-chatbot-window');
       const iconChat = document.getElementById('kioto-icon-chat');
       const iconClose = document.getElementById('kioto-icon-close');
+      const tooltip = document.getElementById('kioto-chatbot-tooltip');
       let isOpen = false;
 
       bubble.addEventListener('click', () => {
@@ -906,6 +918,7 @@ export default function App() {
           }, 20);
           iconChat.style.display = 'none';
           iconClose.style.display = 'block';
+          if (tooltip) tooltip.style.display = 'none';
         } else {
           windowChat.style.opacity = '0';
           windowChat.style.transform = 'translateY(15px)';
@@ -914,6 +927,7 @@ export default function App() {
           }, 250);
           iconChat.style.display = 'block';
           iconClose.style.display = 'none';
+          if (tooltip) tooltip.style.display = 'block';
         }
       });
     })();

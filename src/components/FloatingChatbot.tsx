@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { customFetch } from '../utils/api';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { dbClient, customFetch } from '../utils/api';
 import { 
   MessageSquare, 
   Send, 
@@ -50,16 +51,17 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState<boolean>(() => localStorage.getItem('kioto_chatbot_web') !== 'false');
 
   useEffect(() => {
-    customFetch('/api/config/chatbot')
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          setIsWebChatbotEnabled(data.web !== false);
-          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
-        }
-      })
-      .catch(err => console.error("Error loading chat config inside floating:", err));
-  }, [isOpen]);
+    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsWebChatbotEnabled(data.web !== false);
+        localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+      }
+    }, (err) => {
+      console.error("Error subscribing to chatbot dynamic config:", err);
+    });
+    return () => unsub();
+  }, []);
 
   // Maintain focus on chatbot input when loading finishes, or when messages or state changes
   useEffect(() => {
@@ -149,9 +151,31 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
     }
   };
 
+  // Inactivity timer: check every 5 seconds if >5 minutes passed since last message
+  useEffect(() => {
+    if (!activeSession || !activeSession.messages || activeSession.messages.length === 0) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+      if (lastMsg) {
+        const lastTime = new Date(lastMsg.timestamp).getTime();
+        const diffMs = Date.now() - lastTime;
+        if (diffMs > 5 * 60 * 1000) {
+          console.log("Chatbot session expired due to 5-minute inactivity. Restarting...");
+          loadOrCreateSession();
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeSession]);
+
   // Send message to chatbot
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isWebChatbotEnabled) return;
     if (!messageText.trim() || !activeSession) return;
     
     const textToSend = messageText;
@@ -258,7 +282,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
           <div className="flex-1 overflow-hidden flex flex-col bg-slate-50">
             {!isWebChatbotEnabled ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <div className="w-12 h-12 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-550 mb-3 animate-pulse">
+                <div className="w-12 h-12 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-400 mb-3 animate-pulse">
                   <Bot className="w-6 h-6" />
                 </div>
                 <h5 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1.5">Asistente Virtual</h5>
@@ -266,7 +290,7 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
                   Servicio temporalmente inactivo
                 </p>
                 <p className="text-[10px] text-slate-500 max-w-[220px] leading-relaxed">
-                  Seguimos mejorando nuestro servicio para ti, enseguida volvemos. Por favor contáctanos directamente o agenda tu servicio desde nuestro portal.
+                  Servicio temporalmente inactivo: seguimos mejorando nuestro servicio para ti, enseguida volvemos.
                 </p>
               </div>
             ) : activeSession ? (

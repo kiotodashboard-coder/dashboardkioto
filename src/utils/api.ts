@@ -18,90 +18,7 @@ const DEFAULT_USERS = [
   { id: "u-admin", username: "ejemplo@kioto.com", password: "qwerty1", role: "Admin", name: "Jorge Administrador", isFirstLogin: false, createdAt: new Date().toISOString() }
 ];
 
-const INITIAL_SERVICIOS = [
-  {
-    id: "s-1",
-    clientName: "Roberto Gómez",
-    clientPhone: "+52 81 2233 4455",
-    vehicle: "Kioto SUV Prime 2024",
-    vin: "KIO172938472910AS",
-    plate: "LKN-992-A",
-    serviceType: "Mantenimiento de 20,000 Km",
-    appointmentDate: "2026-05-22T09:00",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "servicio agendado",
-    source: "asesor",
-    notes: "Reporta ruido leve en balatas delanteras al frenar en frío.",
-    createdAt: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 36 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-2",
-    clientName: "Elena Villarreal",
-    clientPhone: "+52 55 7766 5544",
-    vehicle: "Kioto Compact LX",
-    vin: "KIO993827183204YT",
-    plate: "XYZ-123-B",
-    serviceType: "Revisión de frenos y suspensión",
-    appointmentDate: "2026-05-24T14:30",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "en proceso",
-    source: "chatbot",
-    notes: "Cita completada por asistencia virtual. Validó placas y kilometraje.",
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 5.1 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 4.5 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-3",
-    clientName: "Mariana Delgado",
-    clientPhone: "+52 33 9876 5432",
-    vehicle: "Kioto Hatchback Sport",
-    vin: "KIO773829104825PL",
-    plate: "GTO-881-C",
-    serviceType: "Cambio de Bujías y Afinación",
-    appointmentDate: "2026-05-23T11:00",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "entregado",
-    source: "whatsapp",
-    notes: "Servicio agendado por WhatsApp y finalizado exitosamente.",
-    createdAt: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 11.2 * 3600 * 1000).toISOString(),
-      "atendido": new Date(Date.now() - 9.1 * 3600 * 1000).toISOString(),
-      "entregado": new Date(Date.now() - 8.5 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-4",
-    clientName: "Diego Alanís",
-    clientPhone: "+52 55 4433 2211",
-    vehicle: "Kioto Sedan Comfort",
-    vin: "KIO662514283940LK",
-    plate: "DFM-771-A",
-    serviceType: "Alineación, Balanceo y Nitrógeno",
-    appointmentDate: "2026-05-24T08:30",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "entregado",
-    source: "facebook",
-    notes: "Entrega express autorizada.",
-    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 7 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 6.5 * 3600 * 1000).toISOString(),
-      "atendido": new Date(Date.now() - 5.2 * 3600 * 1000).toISOString(),
-      "entregado": new Date(Date.now() - 4.8 * 3600 * 1000).toISOString()
-    }
-  }
-];
+const INITIAL_SERVICIOS: any[] = [];
 
 class MockResponse {
   ok: boolean;
@@ -124,27 +41,8 @@ function getStoredNotifications(): any[] {
   try {
     const raw = localStorage.getItem("kioto_simulated_notifications");
     if (!raw) {
-      // Initialize with default logs
-      const defaultNotifs = [
-        {
-          id: "n-1",
-          clientPhone: "+52 33 9876 5432",
-          clientName: "Mariana Delgado",
-          type: "confirmacion",
-          message: "Hola Mariana Delgado, tu cita para una Visita en Kioto ha sido agendada con éxito para el 2026-05-23 a las 16:00. ¡Te esperamos!",
-          timestamp: new Date().toISOString(),
-          status: "sent"
-        },
-        {
-          id: "n-2",
-          clientPhone: "+52 55 7766 5544",
-          clientName: "Elena Villarreal",
-          type: "confirmacion",
-          message: "Hola Elena Villarreal, tu cita para Servicio Mecánico en Kioto ha sido agendada con éxito para el 2026-05-24 a las 14:30. ¡Te esperamos!",
-          timestamp: new Date().toISOString(),
-          status: "sent"
-        }
-      ];
+      // Initialize with empty logs
+      const defaultNotifs: any[] = [];
       localStorage.setItem("kioto_simulated_notifications", JSON.stringify(defaultNotifs));
       return defaultNotifs;
     }
@@ -567,6 +465,36 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
     }
   }
 
+  // 13.1. GET /api/config/chatbot
+  if (url === "/api/config/chatbot" && method === "GET") {
+    try {
+      const ref = doc(dbClient, "config", "chatbot");
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        return new MockResponse(snap.data());
+      }
+      return new MockResponse({ web: true, whatsapp: true, messenger: true });
+    } catch (err: any) {
+      return new MockResponse({ error: err.message }, 500);
+    }
+  }
+
+  // 13.2. POST /api/config/chatbot
+  if (url === "/api/config/chatbot" && method === "POST") {
+    try {
+      const ref = doc(dbClient, "config", "chatbot");
+      const updated = {
+        web: body.web !== false,
+        whatsapp: body.whatsapp !== false,
+        messenger: body.messenger !== false
+      };
+      await setDoc(ref, updated);
+      return new MockResponse({ success: true, config: updated });
+    } catch (err: any) {
+      return new MockResponse({ error: err.message }, 500);
+    }
+  }
+
   // 14. GET /api/notifications
   if (url === "/api/notifications" && method === "GET") {
     return new MockResponse(getStoredNotifications());
@@ -584,8 +512,50 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
     const clientPhoneOrId = params.get("clientPhoneOrId") || "cli-anon";
     const clientName = params.get("clientName") || "Invitado";
 
+    // Check Chatbot enabled/disabled states from Firestore
+    let isWebChatbotEnabled = true;
+    try {
+      const chatbotConfigRef = doc(dbClient, "config", "chatbot");
+      const chatbotConfigSnap = await getDoc(chatbotConfigRef);
+      if (chatbotConfigSnap.exists()) {
+        const chatbotConfig = chatbotConfigSnap.data();
+        isWebChatbotEnabled = chatbotConfig.web !== false;
+      }
+    } catch (err) {
+      console.error("Error reading web chatbot config:", err);
+    }
+
+    if (!isWebChatbotEnabled) {
+      const inactiveSession = {
+        id: `chat-${clientPhoneOrId}`,
+        clientPhoneOrId,
+        clientName,
+        createdAt: new Date().toISOString(),
+        gatheredData: {},
+        messages: [
+          {
+            id: `msg-welcome-${Date.now()}`,
+            sender: "bot",
+            text: "Servicio temporalmente inactivo: seguimos mejorando nuestro servicio para ti, enseguida volvemos.",
+            timestamp: new Date().toISOString()
+          }
+        ]
+      };
+      return new MockResponse({ success: true, session: inactiveSession });
+    }
+
     const chats = getStoredChats();
     let session = chats.get(clientPhoneOrId);
+
+    if (session) {
+      const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
+      const isExpired = (Date.now() - lastActivity) > 5 * 60 * 1000;
+      if (isExpired || session.needsReset || session.isFinished) {
+        chats.delete(clientPhoneOrId);
+        saveChats(chats);
+        session = null;
+      }
+    }
 
     // Fetch all services to detect if they already have an appointment
     const serviciosSnap = await getDocs(collection(dbClient, "servicios"));
@@ -639,6 +609,58 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
     const { clientPhoneOrId, clientName, message: userText } = body;
     const chats = getStoredChats();
     let session = chats.get(clientPhoneOrId);
+
+    // Check Chatbot enabled/disabled states from Firestore
+    let isWebChatbotEnabled = true;
+    try {
+      const chatbotConfigRef = doc(dbClient, "config", "chatbot");
+      const chatbotConfigSnap = await getDoc(chatbotConfigRef);
+      if (chatbotConfigSnap.exists()) {
+        const chatbotConfig = chatbotConfigSnap.data();
+        isWebChatbotEnabled = chatbotConfig.web !== false;
+      }
+    } catch (err) {
+      console.error("Error reading web chatbot config:", err);
+    }
+
+    if (!isWebChatbotEnabled) {
+      if (!session) {
+        session = {
+          id: `chat-${clientPhoneOrId}`,
+          clientPhoneOrId,
+          clientName,
+          createdAt: new Date().toISOString(),
+          gatheredData: {},
+          messages: []
+        };
+      }
+      session.messages.push({
+        id: `msg-opt-${Date.now()}`,
+        sender: "client",
+        text: userText,
+        timestamp: new Date().toISOString()
+      });
+      const deactivatedReply = "Servicio temporalmente inactivo: seguimos mejorando nuestro servicio para ti, enseguida volvemos.";
+      session.messages.push({
+        id: `msg-bot-${Date.now()}`,
+        sender: "bot",
+        text: deactivatedReply,
+        timestamp: new Date().toISOString()
+      });
+      chats.set(clientPhoneOrId, session);
+      saveChats(chats);
+      return new MockResponse({ success: true, session, reply: deactivatedReply });
+    }
+
+    if (session) {
+      const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
+      const isExpired = (Date.now() - lastActivity) > 5 * 60 * 1000;
+      if (isExpired || session.needsReset || session.isFinished) {
+        chats.delete(clientPhoneOrId);
+        saveChats(chats);
+        session = null;
+      }
+    }
 
     if (!session) {
       session = {
@@ -878,6 +900,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
         await setDoc(doc(dbClient, "servicios", id), newServicio);
         bookingOutcome = true;
+        session.isFinished = true;
 
         // Format WhatsApp notification details
         const formattedDate = proposedFull.replace("T", " a las ");

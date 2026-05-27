@@ -113,6 +113,27 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
     }
   };
 
+  // Inactivity timer: check every 5 seconds if >5 minutes passed since last message
+  useEffect(() => {
+    if (!activeSession || !activeSession.messages || activeSession.messages.length === 0) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+      if (lastMsg) {
+        const lastTime = new Date(lastMsg.timestamp).getTime();
+        const diffMs = Date.now() - lastTime;
+        if (diffMs > 5 * 60 * 1000) {
+          console.log("Chatbot session expired due to 5-minute inactivity. Restarting...");
+          checkAndLoadSession();
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeSession]);
+
   // Send interactive message to chatbot endpoint
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();

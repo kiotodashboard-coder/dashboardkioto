@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { customFetch } from '../utils/api';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { dbClient, customFetch } from '../utils/api';
 import { 
   Bot, 
   Send, 
@@ -97,8 +98,30 @@ export default function EmbeddedChatbotView() {
     }
   };
 
+  // Inactivity timer: check every 5 seconds if >5 minutes passed since last message
+  useEffect(() => {
+    if (!activeSession || !activeSession.messages || activeSession.messages.length === 0) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+      if (lastMsg) {
+        const lastTime = new Date(lastMsg.timestamp).getTime();
+        const diffMs = Date.now() - lastTime;
+        if (diffMs > 5 * 60 * 1000) {
+          console.log("Chatbot session expired due to 5-minute inactivity. Restarting...");
+          loadOrCreateSession();
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeSession]);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isWebChatbotEnabled) return;
     if (!messageText.trim() || !activeSession) return;
 
     const textToSend = messageText;
@@ -173,22 +196,27 @@ export default function EmbeddedChatbotView() {
     }
   }, [activeSession?.messages]);
 
-  // Initial load
+  // Initial load with real-time config listener
   useEffect(() => {
-    // Fetch live chatbot configuration
-    customFetch('/api/config/chatbot')
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          setIsWebChatbotEnabled(data.web !== false);
-        }
-      })
-      .catch(err => console.error("Error loading web chatbot config:", err));
+    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsWebChatbotEnabled(data.web !== false);
+        localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+        localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
+        localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+      }
+    }, (err) => {
+      console.error("Error subscribing to chatbot configs in embedded view:", err);
+    });
 
     loadOrCreateSession();
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 7000);
-    return () => clearInterval(interval);
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -240,15 +268,15 @@ export default function EmbeddedChatbotView() {
         {/* Conditionally render Chat or Offline / Improvement message based on isWebChatbotEnabled configuration */}
         {!isWebChatbotEnabled ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-6 shadow-xs animate-bounce">
+            <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 mb-6 shadow-xs animate-pulse">
               <Bot className="w-8 h-8" />
             </div>
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-3">Asistente Virtual</h2>
-            <p className="text-base font-extrabold text-neutral-900 leading-snug max-w-xs mb-3">
-              Seguimos mejorando, en un momento volvemos contigo
+            <p className="text-base font-extrabold text-neutral-900 leading-snug max-w-sm mb-3">
+              Servicio temporalmente inactivo
             </p>
-            <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-              Nuestro asistente de citas en el portal web está recibiendo mantenimiento programado para optimizar su procesamiento.
+            <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
+              Servicio temporalmente inactivo: seguimos mejorando nuestro servicio para ti, enseguida volvemos.
             </p>
           </div>
         ) : (

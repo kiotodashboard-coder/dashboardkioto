@@ -47,115 +47,13 @@ const DEFAULT_USERS = [
 ];
 
 // Initial mock data to populate dashboard with visual entries
-const INITIAL_SERVICIOS = [
-  {
-    id: "s-1",
-    clientName: "Roberto Gómez",
-    clientPhone: "+52 81 2233 4455",
-    vehicle: "Kioto SUV Prime 2024",
-    vin: "KIO172938472910AS",
-    plate: "LKN-992-A",
-    serviceType: "Mantenimiento de 20,000 Km",
-    appointmentDate: "2026-05-22T09:00",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "servicio agendado",
-    source: "asesor",
-    notes: "Reporta ruido leve en balatas delanteras al frenar en frío.",
-    createdAt: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 36 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-2",
-    clientName: "Elena Villarreal",
-    clientPhone: "+52 55 7766 5544",
-    vehicle: "Kioto Compact LX",
-    vin: "KIO993827183204YT",
-    plate: "XYZ-123-B",
-    serviceType: "Revisión de frenos y suspensión",
-    appointmentDate: "2026-05-24T14:30",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "en proceso",
-    source: "chatbot",
-    notes: "Cita completada por asistencia virtual. Validó placas y kilometraje.",
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 5.1 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 4.5 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-3",
-    clientName: "Mariana Delgado",
-    clientPhone: "+52 33 9876 5432",
-    vehicle: "Kioto Hatchback Sport",
-    vin: "KIO773829104825PL",
-    plate: "GTO-881-C",
-    serviceType: "Cambio de Bujías y Afinación",
-    appointmentDate: "2026-05-23T11:00",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "entregado",
-    source: "whatsapp",
-    notes: "Servicio agendado por WhatsApp y finalizado exitosamente.",
-    createdAt: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 11.2 * 3600 * 1000).toISOString(),
-      "atendido": new Date(Date.now() - 9.1 * 3600 * 1000).toISOString(),
-      "entregado": new Date(Date.now() - 8.5 * 3600 * 1000).toISOString()
-    }
-  },
-  {
-    id: "s-4",
-    clientName: "Diego Alanís",
-    clientPhone: "+52 55 4433 2211",
-    vehicle: "Kioto Sedan Comfort",
-    vin: "KIO662514283940LK",
-    plate: "DFM-771-A",
-    serviceType: "Alineación, Balanceo y Nitrógeno",
-    appointmentDate: "2026-05-24T08:30",
-    assignedServiceUser: "Carlos Taller (Técnico)",
-    status: "entregado",
-    source: "facebook",
-    notes: "Entrega express autorizada.",
-    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-    statusHistory: {
-      "servicio agendado": new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-      "vehículo recibido": new Date(Date.now() - 7 * 3600 * 1000).toISOString(),
-      "en proceso": new Date(Date.now() - 6.5 * 3600 * 1000).toISOString(),
-      "atendido": new Date(Date.now() - 5.2 * 3600 * 1000).toISOString(),
-      "entregado": new Date(Date.now() - 4.8 * 3600 * 1000).toISOString()
-    }
-  }
-];
+const INITIAL_SERVICIOS: any[] = [];
 
 // In-memory map for temporary chat sessions. They will not be saved to Firestore database.
 let simulatedChats = new Map<string, any>();
 
 // In-memory array for WhatsApp notifications. They will not be saved to Firestore database.
-let simulatedNotifications: any[] = [
-  {
-    id: "n-1",
-    clientPhone: "+52 33 9876 5432",
-    clientName: "Mariana Delgado",
-    type: "confirmacion",
-    message: "Hola Mariana Delgado, tu cita para una Visita en Kioto ha sido agendada con éxito para el 2026-05-23 a las 16:00. ¡Te esperamos!",
-    timestamp: new Date().toISOString(),
-    status: "sent"
-  },
-  {
-    id: "n-2",
-    clientPhone: "+52 55 7766 5544",
-    clientName: "Elena Villarreal",
-    type: "confirmacion",
-    message: "Hola Elena Villarreal, tu cita para Servicio Mecánico en Kioto ha sido agendada con éxito para el 2026-05-24 a las 14:30. ¡Te esperamos!",
-    timestamp: new Date().toISOString(),
-    status: "sent"
-  }
-];
+let simulatedNotifications: any[] = [];
 
 // Seed Firestore collections if they are empty
 async function seedDatabaseIfEmpty() {
@@ -1157,6 +1055,20 @@ app.get("/api/chats/session", async (req, res) => {
       session = simulatedChats.get(sId);
     }
 
+    if (session) {
+      const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
+      const isExpired = (Date.now() - lastActivity) > 5 * 60 * 1000;
+      if (isExpired || session.needsReset || session.isFinished) {
+        session = null;
+        simulatedChats.delete(sId);
+        try {
+          await deleteDoc(doc(db, "chats", sId));
+        } catch (dbErr) {
+          console.error("Firestore delete session failed:", dbErr);
+        }
+      }
+    }
+
     const dateNowStr = new Date().toISOString();
 
     if (!session) {
@@ -1292,7 +1204,7 @@ app.post("/api/chats/message", async (req, res) => {
       });
 
       // Add deactivated warning message
-      const deactivatedReply = "Estamos mejorando nuestro servicio, enseguida volvemos";
+      const deactivatedReply = "Servicio temporalmente inactivo: seguimos mejorando nuestro servicio para ti, enseguida volvemos.";
       session.messages.push({
         id: `msg-bot-${Date.now()}`,
         sender: "bot",
@@ -1374,6 +1286,20 @@ app.post("/api/chats/message", async (req, res) => {
 
     if (!session) {
       session = simulatedChats.get(sId);
+    }
+
+    if (session) {
+      const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
+      const isExpired = (Date.now() - lastActivity) > 5 * 60 * 1000;
+      if (isExpired || session.needsReset || session.isFinished) {
+        session = null;
+        simulatedChats.delete(sId);
+        try {
+          await deleteDoc(doc(db, "chats", sId));
+        } catch (dbErr) {
+          console.error("Firestore delete session failed:", dbErr);
+        }
+      }
     }
 
     if (!session) {
@@ -1885,6 +1811,7 @@ INSTRUCCIÓN CRÍTICA DE APRENDIZAJE: ¡NO le vuelvas a pedir su nombre completo
 
             session.appointmentType = null;
             session.gatheredData = {};
+            session.isFinished = true;
           }
         }
       } catch (err) {
