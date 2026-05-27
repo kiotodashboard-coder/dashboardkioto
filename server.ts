@@ -433,6 +433,24 @@ app.post("/api/servicios", async (req, res) => {
       });
     }
 
+    // Same-day check: If appointment is today, make sure we do not book in the past or with less than 20 minutes warning
+    const [appDate] = appointmentDate.split('T');
+    const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+    const localToday = new Date(new Date().getTime() + offsetMs);
+    const todayStr = localToday.toISOString().slice(0, 10);
+
+    if (appDate === todayStr) {
+      const currentHour = localToday.getUTCHours();
+      const currentMin = localToday.getUTCMinutes();
+      const currentTotalMinutes = currentHour * 60 + currentMin;
+
+      if (appMinutesCombined < currentTotalMinutes + 20) {
+        return res.status(400).json({
+          error: "No es posible agendar citas para hoy con menos de 20 minutos de anticipación. Por favor selecciona una hora posterior o una fecha próxima."
+        });
+      }
+    }
+
     if (appMin % intervalMinutes !== 0) {
       const allowedMinutes = [];
       for (let i = 0; i < 60; i += intervalMinutes) {
@@ -1265,10 +1283,30 @@ app.post("/api/chats/message", async (req, res) => {
 
     const getAvailableSlots = (dateStr: string): string[] => {
       const basicSlots = generateSlots(openTime, closeTime, intervalMinutes);
+      
+      const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+      const localToday = new Date(new Date().getTime() + offsetMs);
+      const todayStr = localToday.toISOString().slice(0, 10);
+
       return basicSlots.filter(s => {
         const slotDateTime = `${dateStr}T${s}`;
         const count = allServicios.filter((serv: any) => serv.appointmentDate === slotDateTime).length;
-        return count < maxServices;
+        if (count >= maxServices) return false;
+
+        if (dateStr === todayStr) {
+          const [sh, sm] = s.split(':').map(Number);
+          const slotTotalMinutes = sh * 60 + sm;
+
+          const currentHour = localToday.getUTCHours();
+          const currentMin = localToday.getUTCMinutes();
+          const currentTotalMinutes = currentHour * 60 + currentMin;
+
+          // Limit slots to those that are strictly at least 20 minutes in the future
+          if (slotTotalMinutes < currentTotalMinutes + 20) {
+            return false;
+          }
+        }
+        return true;
       });
     };
 
@@ -1495,6 +1533,14 @@ REGLAS CRÍTICAS DE REPARTO DE HORAS E HORARIOS (APARTADO PROGRAMACIÓN):
 - El último servicio que se puede agendar es como máximo a la hora de cierre: **${closeTime}**.
 - Se programan turnos en rangos/intervalos de cada **${intervalMinutes} minutos** entre ${openTime} and ${closeTime}. Forzar que los minutos coincidan con estos intervalos exactos.
 - Debes tomar en cuenta el número de vehículos aceptados en los rangos de tiempo establecidos: Máximo de **${maxServices} vehículos simultáneos** por cada rango de tiempo (slot).
+
+REGLA CRÍTICA DE RESTRICCIÓN PARA CITAS DEL MISMO DÍA (RESTRICTIVO):
+Si el cliente solicita agendar para el MISMO DÍA actual (la fecha de hoy es ${localToday.toISOString().slice(0, 10)}):
+1. Debes verificar de inmediato si hay espacios/slots disponibles hoy en la lista "DISPONIBILIDAD DE HORAS REAL".
+2. Si NO hay espacios disponibles o si la hora del taller actual ha superado las posibles opciones (por ejemplo, ya pasó la hora de cierre o todos los horarios libres de hoy han expirado y la lista para hoy aparece vacía o no tiene horarios válidos recomendables):
+   - DEBES rechazar amablemente agendar para el mismo día ("hoy").
+   - DEBES explicarle de forma súper cordial que por razones de cupo o límite de horario de programación actual ya no es posible recibirlo hoy, e invítalo explícitamente a agendar en una fecha próxima (por ejemplo, el día de mañana u otra fecha que tenga disponibilidad en la lista).
+3. Si todavía hay horarios válidos disponibles para hoy en la lista (que son estrictamente horarios futuros con margen para llegar), ofrécele SÓLO esos espacios e infórmale de manera clara. NUNCA ofrezcas horarios que ya pasaron o que están a menos de 20 minutos de ocurrir, ya que el cliente no alcanzará a llegar a la cita.
 
 DISPONIBILIDAD DE HORAS REAL DEL TALLER POR FECHA:
 Usa ESTA LISTA de disponibilidad exacta calculada en tiempo real. NUNCA propongas u ofrezcas horarios alternativos o fuera de estos rangos libres para el día elegido por el cliente:
@@ -1765,53 +1811,86 @@ INSTRUCCIÓN CRÍTICA DE APRENDIZAJE: ¡NO le vuelvas a pedir su nombre completo
         if (parsedBooking.booking_type === "servicio_mecanico") {
           // Confirm capacity on backend side
           const proposedFullDate = parsedBooking.appointmentDate || "2026-05-26T10:00";
-          const dBookings = allServicios.filter(s => s.appointmentDate === proposedFullDate);
+          const [parsedDate, parsedTime] = proposedFullDate.split('T');
+          
+          const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+          const localToday = new Date(new Date().getTime() + offsetMs);
+          const todayStr = localToday.toISOString().slice(0, 10);
 
-          if (dBookings.length >= maxServices) {
-            botReply = `Disculpe, acabo de realizar una verificación de último segundo y el horario del *${proposedFullDate.replace('T', ' ')}* ya se completó al máximo (*máximo ${maxServices} citas*). ¿Me indicaría otra hora de su conveniencia?`;
-            
-            // Clean confirmed status to ask again
+          let isSameDayInvalid = false;
+          let sameDayErrorMsg = "";
+
+          if (parsedDate === todayStr && parsedTime) {
+            const [ph, pm] = parsedTime.split(':').map(Number);
+            const slotTotalMinutes = ph * 60 + pm;
+
+            const currentHour = localToday.getUTCHours();
+            const currentMin = localToday.getUTCMinutes();
+            const currentTotalMinutes = currentHour * 60 + currentMin;
+
+            // Enforce minimum 20 minutes buffer for same-day scheduled appointments
+            if (slotTotalMinutes < currentTotalMinutes + 20) {
+              isSameDayInvalid = true;
+              sameDayErrorMsg = `Disculpe, la hora del *${parsedTime}* ya no cuenta con suficiente anticipación para que alcance a llegar hoy al taller mecánico. Le invito de la manera más atenta a seleccionar una hora posterior para el día de hoy, o bien proponer una fecha próxima.`;
+            }
+          }
+
+          if (isSameDayInvalid) {
+            botReply = sameDayErrorMsg;
             if (gathered) {
               gathered.confirmed = null;
               gathered.appointmentDate = null;
             }
             session.gatheredData = gathered;
           } else {
-            bookingOutcome = {
-              id: `serv-cb-${Date.now()}-${randomIdSuffix}`,
-              clientName: parsedBooking.clientName || clientName,
-              clientPhone: parsedBooking.clientPhone || clientPhoneOrId,
-              vehicle: parsedBooking.vehicle || "Vehículo Kioto",
-              vin: parsedBooking.vin || "KIO17XUNSPECIFIED",
-              plate: parsedBooking.plate || "PLACA-ST",
-              serviceType: parsedBooking.serviceType || "Mantenimiento General",
-              appointmentDate: proposedFullDate,
-              assignedServiceUser: "Carlos Taller (Técnico)",
-              status: "servicio agendado",
-              source: (() => {
-                const plat = (session.platform || "chatbot").toLowerCase();
-                if (plat.includes("whatsapp")) return "whatsapp";
-                if (plat.includes("facebook")) return "facebook";
-                return "chatbot";
-              })(),
-              notes: parsedBooking.notes || "Agendado de forma autónoma por Chatbot de Servicio en programación.",
-              createdAt: dateNowStr,
-              statusHistory: {
-                "servicio agendado": dateNowStr
+            const dBookings = allServicios.filter(s => s.appointmentDate === proposedFullDate);
+
+            if (dBookings.length >= maxServices) {
+              botReply = `Disculpe, acabo de realizar una verificación de último segundo y el horario del *${proposedFullDate.replace('T', ' ')}* ya se completó al máximo (*máximo ${maxServices} citas*). ¿Me indicaría otra hora de su conveniencia?`;
+              
+              // Clean confirmed status to ask again
+              if (gathered) {
+                gathered.confirmed = null;
+                gathered.appointmentDate = null;
               }
-            };
-            await setDoc(doc(db, "servicios", bookingOutcome.id), bookingOutcome);
+              session.gatheredData = gathered;
+            } else {
+              bookingOutcome = {
+                id: `serv-cb-${Date.now()}-${randomIdSuffix}`,
+                clientName: parsedBooking.clientName || clientName,
+                clientPhone: parsedBooking.clientPhone || clientPhoneOrId,
+                vehicle: parsedBooking.vehicle || "Vehículo Kioto",
+                vin: parsedBooking.vin || "KIO17XUNSPECIFIED",
+                plate: parsedBooking.plate || "PLACA-ST",
+                serviceType: parsedBooking.serviceType || "Mantenimiento General",
+                appointmentDate: proposedFullDate,
+                assignedServiceUser: "Carlos Taller (Técnico)",
+                status: "servicio agendado",
+                source: (() => {
+                  const plat = (session.platform || "chatbot").toLowerCase();
+                  if (plat.includes("whatsapp")) return "whatsapp";
+                  if (plat.includes("facebook")) return "facebook";
+                  return "chatbot";
+                })(),
+                notes: parsedBooking.notes || "Agendado de forma autónoma por Chatbot de Servicio en programación.",
+                createdAt: dateNowStr,
+                statusHistory: {
+                  "servicio agendado": dateNowStr
+                }
+              };
+              await setDoc(doc(db, "servicios", bookingOutcome.id), bookingOutcome);
 
-            const formattedD = bookingOutcome.appointmentDate.replace("T", " a las ");
-            const wConfirm = `🤖 *Kioto Asistente Virtual (Taller)* 🤖\n¡Hola *${bookingOutcome.clientName}*! Confirmamos tu cita de Servicio Mecánico para tu *${bookingOutcome.vehicle}* (Placas: *${bookingOutcome.plate}*, NIV: *${bookingOutcome.vin}*).\n🛠 Servicio: *${bookingOutcome.serviceType}*\n📅 Fecha: *${formattedD}*\nEstatus actual: *Servicio Agendado*`;
-            await triggerWhatsAppLog(bookingOutcome.clientName, bookingOutcome.clientPhone, "confirmacion", wConfirm);
+              const formattedD = bookingOutcome.appointmentDate.replace("T", " a las ");
+              const wConfirm = `🤖 *Kioto Asistente Virtual (Taller)* 🤖\n¡Hola *${bookingOutcome.clientName}*! Confirmamos tu cita de Servicio Mecánico para tu *${bookingOutcome.vehicle}* (Placas: *${bookingOutcome.plate}*, NIV: *${bookingOutcome.vin}*).\n🛠 Servicio: *${bookingOutcome.serviceType}*\n📅 Fecha: *${formattedD}*\nEstatus actual: *Servicio Agendado*`;
+              await triggerWhatsAppLog(bookingOutcome.clientName, bookingOutcome.clientPhone, "confirmacion", wConfirm);
 
-            const wReminder = `⚙️ *Recordatorio de Taller Kioto* ⚙️\nHola *${bookingOutcome.clientName}*, te recordamos que tu cita de servicio técnico para el carro *${bookingOutcome.vehicle}* es en 1 hora (*${formattedD}*). Favor de presentarse con llave y tarjeta de circulación.`;
-            await triggerWhatsAppLog(bookingOutcome.clientName, bookingOutcome.clientPhone, "recordatorio", wReminder);
+              const wReminder = `⚙️ *Recordatorio de Taller Kioto* ⚙️\nHola *${bookingOutcome.clientName}*, te recordamos que tu cita de servicio técnico para el carro *${bookingOutcome.vehicle}* es en 1 hora (*${formattedD}*). Favor de presentarse con llave y tarjeta de circulación.`;
+              await triggerWhatsAppLog(bookingOutcome.clientName, bookingOutcome.clientPhone, "recordatorio", wReminder);
 
-            session.appointmentType = null;
-            session.gatheredData = {};
-            session.isFinished = true;
+              session.appointmentType = null;
+              session.gatheredData = {};
+              session.isFinished = true;
+            }
           }
         }
       } catch (err) {

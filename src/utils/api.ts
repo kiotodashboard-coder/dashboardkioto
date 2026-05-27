@@ -179,6 +179,24 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         }, 400);
       }
 
+      // Same-day check: If booking is today, prevent booking slots in the past or with less than 20 minutes buffer
+      const [appDate] = appointmentDate.split('T');
+      const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+      const localToday = new Date(new Date().getTime() + offsetMs);
+      const todayStr = localToday.toISOString().slice(0, 10);
+
+      if (appDate === todayStr) {
+        const currentHour = localToday.getUTCHours();
+        const currentMin = localToday.getUTCMinutes();
+        const currentTotalMinutes = currentHour * 60 + currentMin;
+
+        if (appMinutesCombined < currentTotalMinutes + 20) {
+          return new MockResponse({
+            error: "No es posible agendar citas para hoy con menos de 20 minutos de anticipación. Por favor selecciona una hora posterior o una fecha próxima."
+          }, 400);
+        }
+      }
+
       if (appMin % intervalMinutes !== 0) {
         return new MockResponse({ 
           error: `El intervalo seleccionado no es válido (citas cada ${intervalMinutes} minutos).` 
@@ -717,10 +735,30 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
     const getAvailableSlots = (dateStr: string, list: any[]): string[] => {
       const basicSlots = generateSlots(openTime, closeTime, intervalMinutes);
+      
+      const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+      const localToday = new Date(new Date().getTime() + offsetMs);
+      const todayStr = localToday.toISOString().slice(0, 10);
+
       return basicSlots.filter(s => {
         const slotDateTime = `${dateStr}T${s}`;
         const count = list.filter((serv: any) => serv.appointmentDate === slotDateTime).length;
-        return count < maxServices;
+        if (count >= maxServices) return false;
+
+        if (dateStr === todayStr) {
+          const [sh, sm] = s.split(':').map(Number);
+          const slotTotalMinutes = sh * 60 + sm;
+
+          const currentHour = localToday.getUTCHours();
+          const currentMin = localToday.getUTCMinutes();
+          const currentTotalMinutes = currentHour * 60 + currentMin;
+
+          // Enforce 20 minutes minimum margin/buffer so client has enough time to arrive
+          if (slotTotalMinutes < currentTotalMinutes + 20) {
+            return false;
+          }
+        }
+        return true;
       });
     };
 
