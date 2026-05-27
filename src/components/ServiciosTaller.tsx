@@ -21,6 +21,58 @@ import {
 import { ServicioMecanico, User as UserType } from '../types';
 import KiotoLogo from './KiotoLogo';
 
+// Helper to auto-crop the ID card image based on predicted coordinates
+function cropBase64Image(base64Str: string, cropBox: { ymin: number; xmin: number; ymax: number; xmax: number }): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(base64Str);
+          return;
+        }
+
+        // Handle both 0..1 and 0..100 ranges
+        const isNormalized = Math.max(cropBox.ymin, cropBox.xmin, cropBox.ymax, cropBox.xmax) <= 1.05;
+        const scale = isNormalized ? 1.0 : 100.0;
+
+        const ymin = Math.max(0, Math.min(1.0, cropBox.ymin / scale));
+        const xmin = Math.max(0, Math.min(1.0, cropBox.xmin / scale));
+        const ymax = Math.max(0, Math.min(1.0, cropBox.ymax / scale));
+        const xmax = Math.max(0, Math.min(1.0, cropBox.xmax / scale));
+
+        const cropX = img.width * xmin;
+        const cropY = img.height * ymin;
+        const cropWidth = img.width * (xmax - xmin);
+        const cropHeight = img.height * (ymax - ymin);
+
+        // Sanity check
+        if (cropWidth < 10 || cropHeight < 10) {
+          resolve(base64Str);
+          return;
+        }
+
+        canvas.width = cropWidth;
+        canvas.height = cropHeight;
+
+        // Draw image section
+        ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+        resolve(canvas.toDataURL('image/jpeg', 0.92));
+      } catch (err) {
+        console.error("Error drawing cropped image:", err);
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+    img.src = base64Str;
+  });
+}
+
 // ==========================================
 // 1. SIGNATURE PAD CANVAS COMPONENT
 // ==========================================
@@ -1654,9 +1706,17 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           });
                           const data = await res.json();
                           if (data.isValid) {
-                            setDeliveryFotoIdFront(b64);
+                            let processedB64 = b64;
+                            if (data.cropBox) {
+                              try {
+                                processedB64 = await cropBase64Image(b64, data.cropBox);
+                              } catch (cropErr) {
+                                console.warn("Auto-cropping failed, using original", cropErr);
+                              }
+                            }
+                            setDeliveryFotoIdFront(processedB64);
                             setTempB64('');
-                            triggerAlertPop(`Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó con éxito.'}`, "Verificación Exitosa", "success");
+                            triggerAlertPop(`Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó con éxito y se recortó automáticamente para centrar la credencial.'}`, "Verificación Exitosa", "success");
                             setDeliveryStep('doc-back');
                           } else {
                             setDeliveryFotoIdFront('');
@@ -1751,9 +1811,17 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           });
                           const data = await res.json();
                           if (data.isValid) {
-                            setDeliveryFotoIdBack(b64);
+                            let processedB64 = b64;
+                            if (data.cropBox) {
+                              try {
+                                processedB64 = await cropBase64Image(b64, data.cropBox);
+                              } catch (cropErr) {
+                                console.warn("Auto-cropping failed, using original", cropErr);
+                              }
+                            }
+                            setDeliveryFotoIdBack(processedB64);
                             setTempB64('');
-                            triggerAlertPop(`Identificación Válida: Lado Reverso verificado correctamente.`, "Verificación Exitosa", "success");
+                            triggerAlertPop(`Identificación Válida: Lado Reverso verificado correctamente. El fondo se ha recortado automáticamente para centrar la credencial.`, "Verificación Exitosa", "success");
                             setDeliveryStep('firma-cliente');
                           } else {
                             setDeliveryFotoIdBack('');
@@ -2216,14 +2284,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
             </div>
 
-            {/* Terms and footnotes indicating strict compliance of Kioto S.A. */}
-            <div className="text-[9px] text-zinc-400 font-medium leading-relaxed mt-10 text-center select-text max-w-3xl mx-auto space-y-1">
+            {/* Terms and footnotes indicating digital receipt and privacy */}
+            <div className="text-[9.5px] text-zinc-400 font-medium leading-relaxed mt-10 text-center select-text max-w-3xl mx-auto space-y-1">
               <p>
-                Los componentes marcados como 'Verificados' han sido inspeccionados rigurosamente conforme a las directivas de seguridad nacional de Kioto Motors.
-                Garantía oficial de 3 meses o 5,000 kilómetros aplicable exclusivamente en refacciones y mano de obra registradas en este reporte.
-              </p>
-              <p className="font-bold">
-                Control de Calidad Kioto S.A. de C.V. • Folio de Transacción Digital: {printService.id.toUpperCase()}
+                Este documento es un comprobante digital generado por el sistema Kioto Dashboard. La información contenida es confidencial y para uso exclusivo de la agencia y el cliente. Al firmar, el cliente acepta de conformidad los trabajos realizados y la recepción de su unidad.
               </p>
             </div>
 

@@ -875,7 +875,8 @@ app.post("/api/ai/validate-id", async (req, res) => {
           isValid: false,
           idType: "Desconocido",
           confidence: 0.99,
-          message: "Rechazado: La foto tiene resolución insuficiente, está muy oscura o no contiene una identificación legible. Capture el ID oficial de cerca con buena iluminación."
+          message: "Rechazado: La foto tiene resolución insuficiente, está muy oscura o no contiene una identificación legible. Capture el ID oficial de cerca con buena iluminación.",
+          cropBox: { ymin: 0, xmin: 0, ymax: 100, xmax: 100 }
         });
       }
 
@@ -884,26 +885,30 @@ app.post("/api/ai/validate-id", async (req, res) => {
         isValid: true,
         idType: "INE",
         confidence: 0.98,
-        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. (Lado: ${side === 'back' ? 'Reverso' : 'Frente'}).`
+        message: `[Modo Demo Offline] Identificación oficial analizada con éxito. Se detectaron bordes y se recortó automáticamente el fondo para el lado ${side === 'back' ? 'Reverso' : 'Frente'}.`,
+        cropBox: { ymin: 15, xmin: 12, ymax: 85, xmax: 88 }
       });
     }
 
-    const prompt = `Analiza con flexibilidad esta fotografía. Determina si parece ser un documento de identificación oficial real y legible (ej. INE/IFE, Licencia de Conducir, Cédula Profesional, Cartilla Militar).
-    
-Sé sumamente comprensivo con las condiciones de iluminación, enfoque medio o si una mano del asesor está sosteniendo el documento físico frente a la cámara en el taller mecánico. 
+    const prompt = `Analiza detallada pero sumamente flexible de esta fotografía tomada en la recepción/entrega de vehículos de nuestro taller mecánico.
+Determina si en la imagen se visualiza algún tipo de documento oficial, credencial, carnet, boleto, carátula o identificación oficial (como INE/IFE, licencia de conducir, pasaporte o similar).
 
-Para que sea marcada como VÁLIDA (isValid: true), es suficiente con que se visualice un documento que guarde el formato o estructura visual de una identificación oficial por el lado solicitado (lado frontal con foto de perfil o reverso con franja magnética/firmas).
+REGLA DE FLEXIBILIDAD ABSOLUTA (EVITAR FALSOS NEGATIVOS):
+- El usuario está operando en un ambiente real. No seas estricto con el fondo, iluminación, reflejos, manos sosteniendo el documento o ligeras sombras. Si hay alguna identificación reconocible en la foto, DEBES retornar isValid: true.
+- Únicamente retorna isValid: false si la fotografía claramente NO contiene ningún documento, papel o tarjeta visible en absoluto (por ejemplo, es una foto de una pared vacía, un teclado, el piso de taller o un neumático sin documento alguno).
 
-REGLAS DE RECHAZO (isValid: false):
-- Únicamente si la foto claramente NO contiene ningún documento de identidad (por ejemplo, es una foto de una pared vacía, una computadora, el piso de taller o un objeto completamente ajeno sin ninguna tarjeta de identidad visible).
-
-Si se asemeja a una identificación oficial válida, responde con isValid: true e indica el 'idType' correspondiente ("INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar" o "Otro"). Si es inválida por no tener documento alguno, responde con 'idType': "Desconocido" e indica la causa de manera breve en el 'message'.
+RECORTE AUTOMÁTICO (AUTOMATIC CROPPING):
+- Encuentra y localiza las coordenadas (límites exactos) de la tarjeta de identificación oficial en la imagen.
+- Proporciona coordenadas de recorte 'cropBox' con propiedades 'ymin', 'xmin', 'ymax', 'xmax' que representen los porcentajes exactos (valores de 0 a 100) en el alto/ancho de la foto.
+- El recorte debe ser lo más ajustado posible al contorno rectangular de la credencial oficial, recortando y omitiendo el fondo innecesario (como la mesa, las manos, ropa, etc.).
+- Si hay dudas o imperfecciones, proporciona el mejor rectángulo posible o en su defecto { ymin: 0, xmin: 0, ymax: 100, xmax: 100 }.
 
 Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes propiedades:
-- isValid: (Booleano) true o false de acuerdo con este análisis flexible.
-- idType: (Cadena) "INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar", "Otro" o "Desconocido".
-- confidence: (Número de 0 a 1) nivel de confianza de la clasificación.
-- message: (Cadena) Explicación del diagnóstico en español.`;
+- isValid: (Booleano) true si parece haber alguna credencial o identificación oficial comprensible.
+- idType: (Cadena) Tipo de documento detectado ("INE", "Licencia de conducir", "Cédula profesional", "Cartilla militar", "Otro" o "Desconocido").
+- confidence: (Número) Confianza de la predicción, de 0 a 1.
+- message: (Cadena) Un diagnóstico breve, profesional y positivo en español.
+- cropBox: Un objeto con ymin, xmin, ymax, xmax (valores del 0 al 100 como números) para el recorte del documento.`;
 
     const imagePart = {
       inlineData: {
@@ -926,9 +931,19 @@ Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes 
             isValid: { type: Type.BOOLEAN },
             idType: { type: Type.STRING },
             confidence: { type: Type.NUMBER },
-            message: { type: Type.STRING }
+            message: { type: Type.STRING },
+            cropBox: {
+              type: Type.OBJECT,
+              properties: {
+                ymin: { type: Type.NUMBER },
+                xmin: { type: Type.NUMBER },
+                ymax: { type: Type.NUMBER },
+                xmax: { type: Type.NUMBER }
+              },
+              required: ["ymin", "xmin", "ymax", "xmax"]
+            }
           },
-          required: ["isValid", "idType", "confidence", "message"]
+          required: ["isValid", "idType", "confidence", "message", "cropBox"]
         }
       }
     });
@@ -940,7 +955,8 @@ Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes 
       isValid: parsed.isValid,
       idType: parsed.idType || "Desconocido",
       confidence: parsed.confidence || 0.0,
-      message: parsed.message || "Análisis completado exitosamente."
+      message: parsed.message || "Análisis completado exitosamente.",
+      cropBox: parsed.cropBox || { ymin: 0, xmin: 0, ymax: 100, xmax: 100 }
     });
 
   } catch (err: any) {
@@ -952,7 +968,8 @@ Por favor, responde ESTRICTAMENTE con un objeto JSON válido con las siguientes 
       isValid: false,
       idType: "Desconocido",
       confidence: 0.0,
-      message: `El servicio de análisis inteligente está temporalmente inactivo. Por favor intente capturar el documento de identidad nuevamente bajo luz brillante o verifique su conexión.`
+      message: `El servicio de análisis inteligente está temporalmente inactivo. Por favor intente capturar el documento de identidad nuevamente bajo luz brillante o verifique su conexión.`,
+      cropBox: { ymin: 0, xmin: 0, ymax: 100, xmax: 100 }
     });
   }
 });
