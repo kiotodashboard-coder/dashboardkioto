@@ -47,6 +47,20 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState<boolean>(() => localStorage.getItem('kioto_chatbot_web') !== 'false');
+
+  useEffect(() => {
+    customFetch('/api/config/chatbot')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setIsWebChatbotEnabled(data.web !== false);
+          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+        }
+      })
+      .catch(err => console.error("Error loading chat config inside floating:", err));
+  }, [isOpen]);
+
   // Maintain focus on chatbot input when loading finishes, or when messages or state changes
   useEffect(() => {
     if (!loading && isOpen && inputRef.current) {
@@ -242,7 +256,20 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
 
           {/* Body contents */}
           <div className="flex-1 overflow-hidden flex flex-col bg-slate-50">
-            {activeSession ? (
+            {!isWebChatbotEnabled ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-550 mb-3 animate-pulse">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <h5 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1.5">Asistente Virtual</h5>
+                <p className="text-xs font-bold text-slate-800 mb-1 leading-snug">
+                  Servicio temporalmente inactivo
+                </p>
+                <p className="text-[10px] text-slate-500 max-w-[220px] leading-relaxed">
+                  Seguimos mejorando nuestro servicio para ti, enseguida volvemos. Por favor contáctanos directamente o agenda tu servicio desde nuestro portal.
+                </p>
+              </div>
+            ) : activeSession ? (
               /* ACTIVE CHAT AREA */
               <>
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">

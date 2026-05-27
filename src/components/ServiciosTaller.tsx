@@ -379,6 +379,23 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [errorMsg, setErrorMsg] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
+  // Premium Custom Alert Popup State
+  const [alertPop, setAlertPop] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'warning' | 'error' | 'info';
+  } | null>(null);
+
+  const triggerAlertPop = (message: string, title = 'Notificación', type: 'success' | 'warning' | 'error' | 'info' = 'info') => {
+    setAlertPop({
+      show: true,
+      title,
+      message,
+      type
+    });
+  };
+
   // Active validation modal states
   const [selectedServiceForModal, setSelectedServiceForModal] = useState<ServicioMecanico | null>(null);
   const [modalType, setModalType] = useState<'recepcion' | 'atendido' | 'entregado' | null>(null);
@@ -423,7 +440,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [comentariosClienteRecepcion, setComentariosClienteRecepcion] = useState('');
 
   // Dynamic config & collapsible states
-  const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(true);
+  const [isCreateFormExpanded, setIsCreateFormExpanded] = useState(false);
   const [checklistParts, setChecklistParts] = useState<string[]>([]);
 
   // Delivery input temporary storage
@@ -645,22 +662,23 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
     if (currentIdx === targetIdx) return;
 
-    // Backward transition check
+    // Backward transition check - Strictly Forbid Reversing Status
     if (targetIdx < currentIdx) {
-      if (!isAdmin) {
-        setErrorMsg(`Solo el Administrador del sistema tiene autorización para revertir de [${service.status.toUpperCase()}] a [${newStatus.toUpperCase()}]. Operación bloqueada.`);
-        setTimeout(() => setErrorMsg(''), 6000);
-        return;
-      }
-      if (confirm(`⚠️ ¿Desea reconfigurar el servicio a un estado anterior? Los datos acumulados quedarán preservados.`)) {
-        dispatchStatusUpdate(service.id, newStatus);
-      }
+      triggerAlertPop(
+        `No está permitido regresar a un estatus anterior una vez que el flujo del taller ha avanzado. No se puede revertir de [${service.status.toUpperCase()}] a [${newStatus.toUpperCase()}].`,
+        "Operación Bloqueada",
+        "error"
+      );
       return;
     }
 
     // Skip prevention (targetIdx > currentIdx + 1)
     if (targetIdx > currentIdx + 1) {
-      alert(`⚠️ Cambio de estado bloqueado. No se pueden saltar estatus en el flujo del taller. El siguiente estatus correspondiente para este vehículo es: [${statusOrder[currentIdx + 1].toUpperCase()}].`);
+      triggerAlertPop(
+        `No es posible saltar estatus en el flujo del taller. El siguiente estatus correspondiente para este vehículo es: [${statusOrder[currentIdx + 1].toUpperCase()}].`,
+        "Cambio de Estatus Bloqueado",
+        "warning"
+      );
       return;
     }
 
@@ -668,7 +686,11 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     // 1. Moving to 'en proceso' (which is index 2, coming from index 1 'vehículo recibido')
     if (newStatus === 'en proceso') {
       if (!service.recepcionFoto || !service.recepcionFirmaCliente) {
-        alert("⚠️ No puede cambiar el estado a 'En Proceso' porque el estatus anterior 'Vehículo Recibido' no está completo. Asegúrese de registrar primero la foto de recepción y firma del cliente.");
+        triggerAlertPop(
+          "No puede avanzar el estado a 'En Proceso' porque la fase anterior de 'Vehículo Recibido' no está completa. Se requiere primero capturar evidencia de fotos y la firma del cliente.",
+          "Faltan Requisitos de Recepción",
+          "warning"
+        );
         return;
       }
     }
@@ -684,7 +706,11 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     if (newStatus === 'entregado') {
       // Must have 'atendido' comments filled
       if (!service.comentariosMecanico || !service.comentariosMecanico.trim()) {
-        alert("⚠️ No puede cambiar el estado a 'Entregado' porque la fase anterior 'Atendido' no está de alta o completa. El técnico de taller debe registrar primero el check list y comentarios del servicio.");
+        triggerAlertPop(
+          "No se puede avanzar a 'Entregado' porque la fase anterior de 'Atendido' no está completa. El técnico mecánico debe ingresar el reporte técnico del servicio primero.",
+          "Falta Reporte Mecánico",
+          "warning"
+        );
         return;
       }
       setSelectedServiceForModal(service);
@@ -708,11 +734,19 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     if (!selectedServiceForModal) return;
 
     if (!recepcionFoto) {
-      alert("⚠️ Debe capturar o cargar una fotografía frontal del vehículo como evidencia de recepción para continuar.");
+      triggerAlertPop(
+        "Debe capturar o cargar una fotografía frontal del vehículo como evidencia de recepción para continuar.",
+        "Evidencia Requerida",
+        "warning"
+      );
       return;
     }
     if (!recepcionFirmaCliente) {
-      alert("⚠️ Se requiere la firma de conformidad del cliente en la recepción.");
+      triggerAlertPop(
+        "Se requiere la firma de conformidad autógrafa del cliente en la recepción del vehículo.",
+        "Firma Requerida",
+        "warning"
+      );
       return;
     }
 
@@ -730,7 +764,11 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     if (!selectedServiceForModal) return;
 
     if (!comentariosMecanico.trim()) {
-      alert("⚠️ El técnico de taller debe describir obligatoriamente los trabajos realizados en el motor o carrocería.");
+      triggerAlertPop(
+        "El técnico de taller debe describir obligatoriamente los trabajos realizados en el motor o carrocería del vehículo.",
+        "Descripción Requerida",
+        "warning"
+      );
       return;
     }
 
@@ -748,15 +786,27 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     if (!selectedServiceForModal) return;
 
     if (!deliveryFotoIdFront || !deliveryFotoIdBack) {
-      alert("⚠️ Debe registrar la fotografía de una identificación oficial vigente por AMBOS LADOS (Frente y Reverso).");
+      triggerAlertPop(
+        "Debe registrar la fotografía de una identificación oficial vigente por AMBOS LADOS (Frente y Reverso) para validar la entrega.",
+        "Identificación Requerida",
+        "warning"
+      );
       return;
     }
     if (!deliveryFirmaAsesor) {
-      alert("⚠️ Se requiere la firma del Asesor Técnico que realiza la entrega de llaves.");
+      triggerAlertPop(
+        "Se requiere la firma del Asesor Técnico de Kioto que realiza la entrega formal de llaves.",
+        "Firma del Asesor Faltante",
+        "warning"
+      );
       return;
     }
     if (!deliveryFirmaCliente) {
-      alert("⚠️ Se requiere la firma del Cliente que recibe y valida la conformidad del vehículo.");
+      triggerAlertPop(
+        "Se requiere la firma del Cliente que recibe y valida la entera conformidad del vehículo reparado.",
+        "Firma del Cliente Faltante",
+        "warning"
+      );
       return;
     }
 
@@ -821,7 +871,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
   const handleExportExcel = () => {
     if (services.length === 0) {
-      alert('No hay servicios registrados para exportar.');
+      triggerAlertPop("No hay registros de servicios disponibles en este momento para realizar la exportación.", "Sin Datos para Exportar", "info");
       return;
     }
     const headers = ['Folio', 'Cliente', 'Celular', 'Vehículo', 'Placa', 'NIV', 'Servicio', 'Fecha programada', 'Origen', 'Estatus'];
@@ -1155,17 +1205,23 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           </td>
 
                           <td className="py-3.5 px-2.5">
-                            <select
-                              value={service.status}
-                              onChange={(e) => handleStatusChangeRequest(service, e.target.value as any)}
-                              className={`text-[11px] font-black rounded-lg px-2 py-1.5 border cursor-pointer focus:outline-none transition-all uppercase tracking-wider ${getStatusBadgeStyles(service.status)}`}
-                            >
-                              <option value="servicio agendado" disabled={service.status !== 'servicio agendado' && !isAdmin}>Agendado</option>
-                              <option value="vehículo recibido" disabled={service.status !== 'servicio agendado' && service.status !== 'vehículo recibido' && !isAdmin}>Recibido</option>
-                              <option value="en proceso" disabled={service.status !== 'servicio agendado' && service.status !== 'vehículo recibido' && service.status !== 'en proceso' && !isAdmin}>En proceso</option>
-                              <option value="atendido" disabled={service.status !== 'servicio agendado' && service.status !== 'vehículo recibido' && service.status !== 'en proceso' && service.status !== 'atendido' && !isAdmin}>Atendido</option>
-                              <option value="entregado" disabled={service.status !== 'servicio agendado' && service.status !== 'vehículo recibido' && service.status !== 'en proceso' && service.status !== 'atendido' && service.status !== 'entregado' && !isAdmin}>Entregado</option>
-                            </select>
+                            {(() => {
+                              const statusOrder = ['servicio agendado', 'vehículo recibido', 'en proceso', 'atendido', 'entregado'];
+                              const curIdx = statusOrder.indexOf(service.status);
+                              return (
+                                <select
+                                  value={service.status}
+                                  onChange={(e) => handleStatusChangeRequest(service, e.target.value as any)}
+                                  className={`text-[11px] font-black rounded-lg px-2 py-1.5 border cursor-pointer focus:outline-none transition-all uppercase tracking-wider ${getStatusBadgeStyles(service.status)}`}
+                                >
+                                  <option value="servicio agendado" disabled={0 < curIdx || 0 > curIdx + 1}>Agendado</option>
+                                  <option value="vehículo recibido" disabled={1 < curIdx || 1 > curIdx + 1}>Recibido</option>
+                                  <option value="en proceso" disabled={2 < curIdx || 2 > curIdx + 1}>En proceso</option>
+                                  <option value="atendido" disabled={3 < curIdx || 3 > curIdx + 1}>Atendido</option>
+                                  <option value="entregado" disabled={4 < curIdx || 4 > curIdx + 1}>Entregado</option>
+                                </select>
+                              );
+                            })()}
                           </td>
 
                           <td className="py-3.5 px-2.5 text-right whitespace-nowrap">
@@ -1311,7 +1367,11 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                       type="button"
                       onClick={() => {
                         if (recepcionFotos.length < 6) {
-                          alert(`⚠️ Debe capturar un mínimo obligatorio de 6 fotografías que cubran los 4 costados, odómetro y motor para fines de inventario del vehículo. Lleva registradas: ${recepcionFotos.length} de 6.`);
+                          triggerAlertPop(
+                            `Debe capturar un mínimo obligatorio de 6 fotografías que cubran los 4 costados, odómetro y motor para fines de inventario del vehículo. Lleva registradas: ${recepcionFotos.length} de 6.`,
+                            "Falta Evidencia Fotográfica",
+                            "warning"
+                          );
                           return;
                         }
                         setRecepcionStep('comentarios');
@@ -1549,7 +1609,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <div className="space-y-4">
                   <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
                     <strong>Paso 1: Foto Frontal de Identificación Oficial</strong>
-                    <p className="text-gray-500 mt-0.5">Capture o cargue una identificación oficial vigente del titular (INE, Licencia de Conducir, Cédula Profesional o Cartilla Militar).</p>
+                    <p className="text-gray-500 mt-0.5">Capture una identificación oficial vigente del titular (INE, Licencia de Conducir, Cédula Profesional o Cartilla Militar).</p>
                   </div>
 
                   {isValidatingFront ? (
@@ -1576,24 +1636,24 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           const data = await res.json();
                           if (data.isValid) {
                             setDeliveryFotoIdFront(b64);
-                            alert(`✅ Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó correctamente.'}`);
+                            triggerAlertPop(`Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó con éxito.'}`, "Verificación Exitosa", "success");
                             setDeliveryStep('doc-back');
                           } else {
                             setDeliveryFotoIdFront('');
                             setValidationError(`⚠️ No es una identificación oficial válida. ${data.message}`);
-                            alert(`❌ Documento Inválido\n\n${data.message || 'Asegúrese de capturar un ID oficial válido (INE, Licencia, Cédula o Cartilla).'}`);
+                            triggerAlertPop(`Documento Inválido\n\n${data.message || 'Asegúrese de capturar un ID oficial válido (INE, Licencia, Cédula o Cartilla).'}`, "Identificación Inválida", "error");
                           }
                         } catch (err) {
                           console.warn("API Error validation fallback: ", err);
                           setDeliveryFotoIdFront('');
                           setValidationError("⚠️ ID inválida: No se pudo verificar como identificación oficial. Asegúrese de capturar un ID oficial vigente (INE, Licencia, Cédula o Cartilla) con iluminación delantera nítida.");
-                          alert("❌ ID Inválida\n\nNo fue posible validar el documento como una identificación oficial mexicana válida.");
+                          triggerAlertPop("No fue posible validar el documento como una identificación oficial mexicana válida.", "ID Inválida", "error");
                         } finally {
                           setIsValidatingFront(false);
                         }
                       }}
                       savedImage={deliveryFotoIdFront}
-                      hideUpload={false}
+                      hideUpload={true}
                     />
                   )}
 
@@ -1621,7 +1681,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <div className="space-y-4">
                   <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
                     <strong>Paso 2: Foto Reverso de Identificación Oficial</strong>
-                    <p className="text-gray-500 mt-0.5">Capture o cargue el reverso de la identificación oficial (donde se observa la firma autógrafa, sello o código de barras).</p>
+                    <p className="text-gray-500 mt-0.5">Capture el reverso de la identificación oficial (donde se observa la firma autógrafa, sello o código de barras).</p>
                   </div>
 
                   {isValidatingBack ? (
@@ -1648,24 +1708,24 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           const data = await res.json();
                           if (data.isValid) {
                             setDeliveryFotoIdBack(b64);
-                            alert(`✅ Identificación Válida: Lado Reverso verificado.\n\nEstatus: ${data.message || 'Se procesó correctamente.'}`);
+                            triggerAlertPop(`Identificación Válida: Lado Reverso verificado correctamente.`, "Verificación Exitosa", "success");
                             setDeliveryStep('firma-cliente');
                           } else {
                             setDeliveryFotoIdBack('');
                             setValidationError(`⚠️ Reverso no válido. ${data.message}`);
-                            alert(`❌ Reverso Inválido\n\n${data.message || 'Asegúrese de tomar foto al lado reverso del documento de identidad.'}`);
+                            triggerAlertPop(`Reverso Inválido\n\n${data.message || 'Asegúrese de tomar foto al lado reverso del documento de identidad.'}`, "Reverso no Válido", "error");
                           }
                         } catch (err) {
                           console.warn("API Error validation back fallback: ", err);
                           setDeliveryFotoIdBack('');
                           setValidationError("⚠️ ID inválida: No se pudo verificar el reverso como identificación oficial. Asegúrese de capturar la parte trasera del documento con iluminación nítida.");
-                          alert("❌ ID Inválida - Reverso\n\nNo fue posible validar el reverso del documento como una identificación oficial mexicana válida.");
+                          triggerAlertPop("No fue posible validar el reverso del documento como una identificación oficial mexicana válida.", "ID Reverso Inválida", "error");
                         } finally {
                           setIsValidatingBack(false);
                         }
                       }}
                       savedImage={deliveryFotoIdBack}
-                      hideUpload={false}
+                      hideUpload={true}
                     />
                   )}
 
@@ -1714,7 +1774,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                       type="button"
                       onClick={() => {
                         if (!deliveryFirmaCliente) {
-                          alert("⚠️ Debe registrar la firma de conformidad del cliente antes de avanzar.");
+                          triggerAlertPop("Debe registrar la firma de conformidad autógrafa del cliente antes de avanzar.", "Firma Requerida", "warning");
                           return;
                         }
                         setDeliveryStep('firma-asesor');
@@ -2100,6 +2160,65 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
               </p>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* =======================================================
+          PREMIUM CUSTOM POPUP MODAL (tipo pop) 
+          ======================================================= */}
+      {alertPop && alertPop.show && (
+        <div 
+          id="custom-dialog-popup" 
+          className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in"
+        >
+          <div 
+            id="custom-dialog-card" 
+            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 flex flex-col items-center text-center p-6 space-y-4 animate-scale-up"
+          >
+            {/* Conditional Premium Icon Backdrop */}
+            <div className="flex items-center justify-center">
+              {alertPop.type === 'success' && (
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center border border-emerald-100">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+              )}
+              {alertPop.type === 'warning' && (
+                <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center border border-amber-100">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+              )}
+              {alertPop.type === 'error' && (
+                <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center border border-rose-100">
+                  <AlertCircle className="w-8 h-8 text-rose-600" />
+                </div>
+              )}
+              {alertPop.type === 'info' && (
+                <div className="w-14 h-14 bg-sky-50 text-sky-600 rounded-full flex items-center justify-center border border-sky-100">
+                  <AlertCircle className="w-8 h-8 text-sky-500" />
+                </div>
+              )}
+            </div>
+
+            {/* Typography pairings */}
+            <div className="space-y-1.5 w-full select-text">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest leading-none">
+                {alertPop.title}
+              </h4>
+              <p className="text-xs font-medium text-slate-500 leading-relaxed max-h-48 overflow-y-auto px-2">
+                {alertPop.message}
+              </p>
+            </div>
+
+            {/* Accept action button */}
+            <button
+              type="button"
+              id="close-dialog-btn"
+              onClick={() => setAlertPop(null)}
+              className="w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition-all cursor-pointer"
+            >
+              Entendido
+            </button>
           </div>
         </div>
       )}

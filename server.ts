@@ -605,6 +605,22 @@ app.put("/api/servicios/:id", async (req, res) => {
     const oldStatus = prevServ.status;
     const newStatus = status || oldStatus;
 
+    // End-to-end safety check: block status regression requests
+    const statusOrder = [
+      "servicio agendado",
+      "vehículo recibido",
+      "en proceso",
+      "atendido",
+      "entregado"
+    ];
+    if (status && status !== oldStatus) {
+      const oldIdx = statusOrder.indexOf(oldStatus);
+      const newIdx = statusOrder.indexOf(status);
+      if (oldIdx !== -1 && newIdx !== -1 && newIdx < oldIdx) {
+        return res.status(400).json({ error: "Transición de estatus bloqueada. No está permitido cambiar el servicio a un estatus anterior." });
+      }
+    }
+
     // Track status change timestamp history
     const updatedStatusHistory = {
       ...(prevServ.statusHistory || {}),
@@ -1150,6 +1166,7 @@ app.get("/api/chats/session", async (req, res) => {
       
       const cleanSessionPhone = (clientPhoneOrId as string).replace(/\D/g, "");
       let matchedService: any = null;
+      let upcomingService: any = null;
       if (cleanSessionPhone.length >= 10) {
         const targetLast10 = cleanSessionPhone.slice(-10);
         matchedService = allServicios.find((s: any) => {
@@ -1157,12 +1174,24 @@ app.get("/api/chats/session", async (req, res) => {
           const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
           return sPhoneCleaned.endsWith(targetLast10);
         });
+        upcomingService = allServicios.find((s: any) => {
+          if (!s.clientPhone) return false;
+          const sPhoneCleaned = s.clientPhone.replace(/\D/g, "");
+          return sPhoneCleaned.endsWith(targetLast10) && s.status !== "entregado";
+        });
       }
 
       const gatheredData: any = {};
       let welcomeText = `¡Hola! Te atiende el **Asistente Kioto** 🤖. Estoy aquí para guiarte de forma sencilla, paso por paso, en el registro de tu cita de servicio mecánico en nuestro taller. Para comenzar, ¿cuál es tu nombre completo?`;
 
-      if (matchedService) {
+      if (upcomingService) {
+        gatheredData.clientName = upcomingService.clientName;
+        gatheredData.clientPhone = upcomingService.clientPhone;
+        gatheredData.alreadyRegistered = "true";
+        gatheredData.hasUpcomingService = "true";
+        const formattedDate = upcomingService.appointmentDate.replace('T', ' a las ');
+        welcomeText = `¡Hola de nuevo, **${upcomingService.clientName}**! He verificado tu número en nuestro sistema y detecté que ya tienes un servicio próximo registrado con nosotros:\n\n🚗 *Vehículo*: **${upcomingService.vehicle}** (Placas: ${upcomingService.plate || "S/H"})\n🛠 *Servicio*: **${upcomingService.serviceType}**\n📅 *Fecha*: **${formattedDate}**\n📈 *Estatus*: 🟢 **${upcomingService.status.toUpperCase()}**\n\n¿Te gustaría agendar **un nuevo servicio mecánico adicional** hoy? (Por favor, respóndeme con el tipo de servicio que deseas o indícame qué mantenimiento requieres para abrir un nuevo agendamiento).`;
+      } else if (matchedService) {
         // Autocompletes name/phone if the cell is already registered in DB!
         gatheredData.clientName = matchedService.clientName;
         gatheredData.clientPhone = matchedService.clientPhone;
@@ -1174,7 +1203,7 @@ app.get("/api/chats/session", async (req, res) => {
         id: sId,
         platform,
         clientPhoneOrId,
-        clientName: matchedService ? matchedService.clientName : (clientName || "Invitado Taller"),
+        clientName: upcomingService ? upcomingService.clientName : (matchedService ? matchedService.clientName : (clientName || "Invitado Taller")),
         appointmentType: "servicio_mecanico",
         gatheredData,
         messages: [
@@ -1569,7 +1598,7 @@ IMPORTANTE: Nunca incluyas el bloque JSON hasta que el cliente haya confirmado f
           const isActive = activeServiceFound ? true : false;
           if (isActive) {
             lookupInfo = `\n\n[INFO DE APRENDIZAJE INTUITIVO - SERVICIO ACTIVO EN PROGRAMACIÓN]
-El sistema detectó intuitivamente que este cliente ya está registrado:
+El sistema detectó intuitivamente que este cliente ya tiene un servicio próximo o cita activa registrada:
 - Nombre completo: ${pastClientFound.clientName}
 - TeléfonoCelular: ${pastClientFound.clientPhone}
 - Auto actual: ${pastClientFound.vehicle} (Placas: ${pastClientFound.plate || "S/H"})
@@ -1577,7 +1606,7 @@ El sistema detectó intuitivamente que este cliente ya está registrado:
 - Cita: ${pastClientFound.appointmentDate.replace('T', ' a las ')}
 - Estatus de cita: ${pastClientFound.status.toUpperCase()}
 
-INSTRUCCIÓN CRÍTICA DE APRENDIZAJE: Infórmale cordialmente que tiene una cita activa con nosotros para su auto. Luego, pregúntale directamente si desea agregar o registrar otro servicio mecánico adicional de forma rápida. ¡NO le vuelvas a preguntar su nombre ni teléfono en ningún momento, ya que están registrados!`;
+INSTRUCCIÓN CRÍTICA DE APRENDIZAJE: Coméntale explícitamente al cliente sobre esta cita o servicio próximo que tiene activo (mencionando vehículo, tipo de servicio, fecha y estatus) para que esté enterado de que está registrado en programación, y pregúntale/dale la opción directamente de si desea agendar uno nuevo o adicional hoy. ¡NO le vuelvas a preguntar su nombre ni teléfono celular en ningún momento, ya que están registrados!`;
           } else {
             lookupInfo = `\n\n[INFO DE APRENDIZAJE INTUITIVO - RETORNO DE CLIENTE REGISTRADO]
 El sistema detectó intuitivamente que este cliente con teléfono o ID "${pastClientFound.clientPhone}" ya es cliente de nuestro taller con historial registrado:

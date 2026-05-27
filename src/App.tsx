@@ -67,24 +67,22 @@ export default function App() {
   const [isWhatsAppChatbotEnabled, setIsWhatsAppChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_whatsapp') !== 'false');
   const [isMessengerChatbotEnabled, setIsMessengerChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_messenger') !== 'false');
 
-  // Load chatbot server configuration on login/startup
+  // Load chatbot server configuration on startup
   useEffect(() => {
-    if (currentUser) {
-      customFetch('/api/config/chatbot')
-        .then(res => res.json())
-        .then(data => {
-          if (data) {
-            setIsWebChatbotEnabled(data.web !== false);
-            setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
-            setIsMessengerChatbotEnabled(data.messenger !== false);
-            localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
-            localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
-            localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
-          }
-        })
-        .catch(err => console.error("Error fetching chatbot config:", err));
-    }
-  }, [currentUser]);
+    customFetch('/api/config/chatbot')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          setIsWebChatbotEnabled(data.web !== false);
+          setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
+          setIsMessengerChatbotEnabled(data.messenger !== false);
+          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+          localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
+          localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+        }
+      })
+      .catch(err => console.error("Error fetching chatbot config:", err));
+  }, []);
 
   const handleToggleWebChatbot = () => {
     const newVal = !isWebChatbotEnabled;
