@@ -384,19 +384,7 @@ app.delete("/api/users/:id", async (req, res) => {
 app.get("/api/servicios", async (req, res) => {
   try {
     const snap = await getDocs(collection(db, "servicios"));
-    const rawServicios = snap.docs.map(d => d.data());
-    
-    // Filter to only display services from 1 day before query date onwards
-    const offsetMs = -6 * 60 * 60 * 1000;
-    const localToday = new Date(new Date().getTime() + offsetMs);
-    const oneDayBefore = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
-    const thresholdStr = oneDayBefore.toISOString().slice(0, 10);
-    
-    const servicios = rawServicios.filter((s: any) => {
-      if (!s.appointmentDate) return false;
-      const sDate = s.appointmentDate.slice(0, 10);
-      return sDate >= thresholdStr;
-    });
+    const servicios = snap.docs.map(d => d.data());
 
     servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     res.json(servicios);
@@ -1047,18 +1035,10 @@ INSTRUCCIONES CLAVE:
 // --- GEMINI INTELLIGENT CHATBOT ENGINE ---
 app.get("/api/chats", async (req, res) => {
   try {
-    const snap = await getDocs(collection(db, "chats"));
-    const chats = snap.docs.map(d => d.data());
-    // Also merge in-memory if needed
-    for (const c of simulatedChats.values()) {
-      if (!chats.some((x: any) => x.id === c.id)) {
-        chats.push(c);
-      }
-    }
-    res.json(chats);
-  } catch (err: any) {
     const chats = Array.from(simulatedChats.values());
     res.json(chats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1071,20 +1051,7 @@ app.get("/api/chats/session", async (req, res) => {
   const sId = `${platform}-${clientPhoneOrId}`;
 
   try {
-    let session: any = null;
-    try {
-      const chatRef = doc(db, "chats", sId);
-      const chatSnap = await getDoc(chatRef);
-      if (chatSnap.exists()) {
-        session = chatSnap.data();
-      }
-    } catch (dbErr) {
-      console.error("Firestore chat load failed, falling back to memory:", dbErr);
-    }
-
-    if (!session) {
-      session = simulatedChats.get(sId);
-    }
+    let session = simulatedChats.get(sId);
 
     if (session) {
       const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
@@ -1092,11 +1059,6 @@ app.get("/api/chats/session", async (req, res) => {
       if (isExpired || session.needsReset || session.isFinished) {
         session = null;
         simulatedChats.delete(sId);
-        try {
-          await deleteDoc(doc(db, "chats", sId));
-        } catch (dbErr) {
-          console.error("Firestore delete session failed:", dbErr);
-        }
       }
     }
 
@@ -1176,11 +1138,6 @@ app.get("/api/chats/session", async (req, res) => {
       };
       
       simulatedChats.set(sId, session);
-      try {
-        await setDoc(doc(db, "chats", sId), session);
-      } catch (dbErr) {
-        console.error("Firestore chat save failed:", dbErr);
-      }
     }
 
     res.json({ success: true, session });
@@ -1210,18 +1167,10 @@ app.post("/api/chats/message", async (req, res) => {
 
     if (!isPlatformEnabled) {
       const sId = `${platform}-${clientPhoneOrId}`;
-      let session: any = null;
-      try {
-        const chatRef = doc(db, "chats", sId);
-        const chatSnap = await getDoc(chatRef);
-        if (chatSnap.exists()) {
-          session = chatSnap.data();
-        }
-      } catch (dbErr) {
-        console.error("Firestore chat load failed, falling back to memory:", dbErr);
-      }
+      let session = simulatedChats.get(sId);
+
       if (!session) {
-        session = simulatedChats.get(sId) || {
+        session = {
           id: sId,
           platform,
           clientPhoneOrId,
@@ -1253,11 +1202,6 @@ app.post("/api/chats/message", async (req, res) => {
 
       session.updatedAt = dateNowStr;
       simulatedChats.set(sId, session);
-      try {
-        await setDoc(doc(db, "chats", sId), session);
-      } catch (dbErr) {
-        console.error("Firestore chat save failed:", dbErr);
-      }
 
       return res.json({
         success: true,
@@ -1340,20 +1284,7 @@ app.post("/api/chats/message", async (req, res) => {
     };
 
     const sId = `${platform}-${clientPhoneOrId}`;
-    let session: any = null;
-    try {
-      const chatRef = doc(db, "chats", sId);
-      const chatSnap = await getDoc(chatRef);
-      if (chatSnap.exists()) {
-        session = chatSnap.data();
-      }
-    } catch (dbErr) {
-      console.error("Firestore chat load failed, falling back to memory:", dbErr);
-    }
-
-    if (!session) {
-      session = simulatedChats.get(sId);
-    }
+    let session = simulatedChats.get(sId);
 
     if (session) {
       const lastActivity = session.updatedAt ? new Date(session.updatedAt).getTime() : new Date(session.createdAt).getTime();
@@ -1361,11 +1292,6 @@ app.post("/api/chats/message", async (req, res) => {
       if (isExpired || session.needsReset || session.isFinished) {
         session = null;
         simulatedChats.delete(sId);
-        try {
-          await deleteDoc(doc(db, "chats", sId));
-        } catch (dbErr) {
-          console.error("Firestore delete session failed:", dbErr);
-        }
       }
     }
 
@@ -2070,11 +1996,6 @@ ${servicesNewPhoneText}`;
 
     session.updatedAt = dateNowStr;
     simulatedChats.set(sId, session);
-    try {
-      await setDoc(doc(db, "chats", sId), session);
-    } catch (dbErr) {
-      console.error("Firestore chat save failed:", dbErr);
-    }
 
     res.json({
       success: true,

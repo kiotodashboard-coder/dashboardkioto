@@ -874,7 +874,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       triggerAlertPop("No hay registros de servicios disponibles en este momento para realizar la exportación.", "Sin Datos para Exportar", "info");
       return;
     }
-    const headers = ['Folio', 'Cliente', 'Celular', 'Vehículo', 'Placa', 'NIV', 'Servicio', 'Fecha programada', 'Origen', 'Estatus'];
+    const headers = ['Folio', 'Cliente', 'Celular', 'Vehículo', 'Placa', 'NIV', 'Servicio', 'Fecha programada', 'Origen', 'Estatus', 'Hora de entrega'];
     const rows = (selectedIds.size > 0 ? services.filter(s => selectedIds.has(s.id)) : services).map((s) => {
       const rawSource = (s.source || 'asesor').toLowerCase();
       let mappedSource = 'Asesor';
@@ -896,7 +896,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         s.serviceType || '',
         (s.appointmentDate || '').replace('T', ' '),
         mappedSource,
-        s.status || ''
+        s.status || '',
+        s.deliveredAt ? s.deliveredAt.replace('T', ' ') : ''
       ];
     });
 
@@ -1122,6 +1123,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                     <th className="py-4 px-2.5">Folio / Vehículo</th>
                     <th className="py-4 px-2.5">Servicio Requerido</th>
                     <th className="py-4 px-2.5">Fecha Cita</th>
+                    <th className="py-4 px-2.5">Hora de Entrega</th>
                     <th className="py-4 px-2.5">Origen</th>
                     <th className="py-4 px-2.5">Estatus</th>
                     <th className="py-4 px-2.5 text-right">Acciones</th>
@@ -1130,7 +1132,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <tbody className="divide-y divide-gray-100 text-xs text-gray-800">
                   {filteredServices.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 text-center text-gray-400 font-medium italic">
+                      <td colSpan={8} className="py-16 text-center text-gray-400 font-medium italic">
                         Sin coincidencias en Kioto Dashboard.
                       </td>
                     </tr>
@@ -1177,6 +1179,19 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
                           <td className="py-3.5 px-2.5 font-semibold text-gray-900">
                             {formattedDate}
+                          </td>
+
+                          <td className="py-3.5 px-2.5 font-semibold text-emerald-800 font-sans">
+                            {service.deliveredAt ? (
+                              (() => {
+                                const dDateObj = new Date(service.deliveredAt);
+                                return isNaN(dDateObj.getTime())
+                                  ? service.deliveredAt.replace('T', ' ')
+                                  : `${String(dDateObj.getDate()).padStart(2, '0')}/${String(dDateObj.getMonth() + 1).padStart(2, '0')}/${dDateObj.getFullYear()} - ${String(dDateObj.getHours()).padStart(2, '0')}:${String(dDateObj.getMinutes()).padStart(2, '0')} hrs`;
+                              })()
+                            ) : (
+                              <span className="text-gray-300 font-normal italic">No entregado aún</span>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-2.5">

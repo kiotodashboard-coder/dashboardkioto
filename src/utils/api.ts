@@ -130,17 +130,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
   if (url === "/api/servicios" && method === "GET") {
     try {
       const snap = await getDocs(collection(dbClient, "servicios"));
-      const rawServicios = snap.docs.map(d => d.data());
-      
-      const offsetMs = -6 * 60 * 60 * 1000;
-      const localToday = new Date(new Date().getTime() + offsetMs);
-      const oneDayBefore = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
-      const thresholdStr = oneDayBefore.toISOString().slice(0, 10);
-      
-      const servicios = rawServicios.filter((s: any) => {
-        if (!s.appointmentDate) return false;
-        return s.appointmentDate.slice(0, 10) >= thresholdStr;
-      });
+      const servicios = snap.docs.map(d => d.data());
 
       servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       return new MockResponse(servicios);
