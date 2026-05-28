@@ -732,15 +732,16 @@ app.get("/api/config/chatbot", async (req, res) => {
 });
 
 app.post("/api/config/chatbot", async (req, res) => {
-  const { web, whatsapp, messenger } = req.body;
+  const { web, whatsapp, messenger, customDirectives } = req.body;
   try {
     const docRef = doc(db, "config", "chatbot");
-    const updated = {
-      web: web !== false,
-      whatsapp: whatsapp !== false,
-      messenger: messenger !== false
-    };
-    await setDoc(docRef, updated);
+    const updated: any = {};
+    if (web !== undefined) updated.web = web !== false;
+    if (whatsapp !== undefined) updated.whatsapp = whatsapp !== false;
+    if (messenger !== undefined) updated.messenger = messenger !== false;
+    if (customDirectives !== undefined) updated.customDirectives = customDirectives;
+    
+    await setDoc(docRef, updated, { merge: true });
     res.json({ success: true, config: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1466,7 +1467,20 @@ app.post("/api/chats/message", async (req, res) => {
         const totalCitasEnTaller = allServicios.length;
         const totalCitasEntregadas = allServicios.filter((s: any) => s.status === 'entregado').length;
 
+        const customDirectives = chatbotConfig.customDirectives || "";
+
         const systemInstruction = `Eres "Asistente Kioto", el chatbot oficial del taller Kioto Auto. Tu meta es guiar al cliente para agendar una cita de servicio mecánico de forma simplificada siguiendo un orden estricto de preguntas.
+
+INFORMACIÓN COMPLEMENTARIA DE LA AGENCIA Y PÁGINA (DIRECCIÓN, TELÉFONO Y HORARIOS):
+- Nombre del Taller: Automotriz Kioto
+- Teléfono de Contacto Técnico / WhatsApp: +52 55 (4321) 0987
+- Dirección Física Principal de Taller: Av. Paseo de la Reforma 2026, Juárez, Cuauhtémoc, 06600 Ciudad de México, CDMX, México
+- Horario de Apertura : ${openTime}
+- Horario de Cierre : ${closeTime}
+- Región de Atención: México (GMT-6 Central de México)
+
+DIRECTRICES ADICIONALES Y REGLAS DE RESPUESTA PERSONALIZADAS (DEFINIDAS POR EL ADMINISTRADOR EN LA CONFIGURACIÓN):
+${customDirectives ? `Sigue de manera obligatoria estas directrices adicionales en la conversación:\n${customDirectives}` : "No hay directrices adicionales particulares cargadas. Responde con la información de taller estándar anterior si preguntan por contacto o ubicación."}
 
 CONCEPTO DE AUTO-APRENDIZAJE EN BASE AL DASHBOARD DE NUESTRA AGENCIA:
 Has aprendido los patrones de solicitudes en tiempo real desde el Dashboard actual de Kioto Auto:

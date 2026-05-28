@@ -2062,24 +2062,48 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             {/* Print Friendly CSS Injector */}
             <style>{`
               @media print {
+                /* Reset html, body, and major containers to allow natural multi-page static flow */
+                html, body, #root, #print-overlay-document {
+                  position: static !important;
+                  overflow: visible !important;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  display: block !important;
+                  background: white !important;
+                  color: #000000 !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                /* Hide everything by default to exclude screens/headers */
                 body * {
                   visibility: hidden !important;
                 }
+                /* Exclusively show only the printable sheet and all of its descendants */
                 #printable-service-sheet, #printable-service-sheet * {
                   visibility: visible !important;
                 }
+                /* Style the report sheet container itself to behave as a normal block element */
                 #printable-service-sheet {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
+                  position: static !important;
+                  display: block !important;
                   width: 100% !important;
+                  max-width: 100% !important;
                   margin: 0 !important;
-                  padding: 1cm !important;
+                  padding: 1.2cm !important;
                   box-shadow: none !important;
                   border: none !important;
+                  background: white !important;
+                }
+                /* Avoid content layout from breaking mid-block */
+                .print-block-avoid {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
                 }
                 @page {
-                  margin: 0;
+                  size: letter;
+                  margin: 1.2cm;
                 }
               }
             `}</style>
@@ -2134,7 +2158,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Informative block: Cliente & Auto */}
-            <div className="bg-slate-50 border border-gray-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-5">
+            <div className="bg-slate-50 border border-gray-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-5 print-block-avoid">
               
               <div className="space-y-2">
                 <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1 flex items-center select-none">
@@ -2161,7 +2185,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Firma de Recepción del Cliente (Enseguida de los datos) */}
-            <div className="border border-gray-200 rounded-xl p-4 bg-slate-50/50 mb-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="border border-gray-200 rounded-xl p-4 bg-slate-50/50 mb-5 flex flex-col sm:flex-row items-center justify-between gap-4 print-block-avoid">
               <div className="text-left space-y-1">
                 <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase select-none">
                   ✍️ Firma de Recepción de la Unidad
@@ -2186,7 +2210,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
             {/* Comentarios particulares de recepción (per requirement 6: "Añade comentarios del cliente al recibir el vehiculo, despues de la firma del cliente, por si quiere que se revise algo en especifico") */}
             {printService.comentariosClienteRecepcion && (
-              <div className="border border-indigo-200 rounded-xl p-4 mb-5 bg-indigo-50/25">
+              <div className="border border-indigo-200 rounded-xl p-4 mb-5 bg-indigo-50/25 print-block-avoid">
                 <h4 className="text-[11px] font-black text-indigo-850 tracking-widest uppercase border-b border-indigo-200 pb-1.5 mb-2 select-none">
                   📝 Instrucciones Especiales y Síntomas Reportados por el Cliente
                 </h4>
@@ -2197,7 +2221,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             )}
 
             {/* Evidencia fotográfica de recepción (Ampliada y más visible!) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50">
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50 print-block-avoid">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
                 📸 Evidencia Fotográfica de Recepción (Inventario Detallado del Vehículo)
               </h4>
@@ -2231,7 +2255,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Checklist Técnico acomodado a lo ancho de la hoja (3-Column Grid) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs">
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs print-block-avoid">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
                 📋 Diagnóstico Completo y Checklist Técnico Vehicular
               </h4>
@@ -2262,7 +2286,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Trabajos desarrollados en taller (Sección debajo del checklist) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50/50">
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50/50 print-block-avoid">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-2.5 select-none">
                 ⚙️ Trabajos Desarrollados en Taller
               </h4>
@@ -2272,7 +2296,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Recomendaciones */}
-            <div className="border border-orange-200 rounded-xl p-5 mb-5 bg-orange-50/20">
+            <div className="border border-orange-200 rounded-xl p-5 mb-5 bg-orange-50/20 print-block-avoid">
               <h4 className="text-[11px] font-black text-orange-800 tracking-widest uppercase border-b border-orange-200 pb-1.5 mb-2.5 select-none">
                 ⚠️ Recomendaciones de Seguridad Futura
               </h4>
@@ -2282,7 +2306,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Fotografías de Identificación de Cliente (Frente y Reverso) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-6 bg-slate-50">
+            <div className="border border-gray-200 rounded-xl p-5 mb-6 bg-slate-50 print-block-avoid">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-2 mb-4 select-none">
                 🪪 Fotografías de Identificación Oficial (Vigente para Entrega)
               </h4>
@@ -2312,7 +2336,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Signatures of Client and Adviser */}
-            <div className="border-t border-gray-200 pt-5 mb-5 select-none grid grid-cols-2 gap-6 text-center">
+            <div className="border-t border-gray-200 pt-5 mb-5 select-none grid grid-cols-2 gap-6 text-center print-block-avoid">
               
               <div className="space-y-2 bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-300">
                 <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Firma Entrega Asesor</span>

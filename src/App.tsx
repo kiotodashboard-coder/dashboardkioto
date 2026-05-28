@@ -67,6 +67,9 @@ export default function App() {
   const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_web') !== 'false');
   const [isWhatsAppChatbotEnabled, setIsWhatsAppChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_whatsapp') !== 'false');
   const [isMessengerChatbotEnabled, setIsMessengerChatbotEnabled] = useState(() => localStorage.getItem('kioto_chatbot_messenger') !== 'false');
+  const [newDirective, setNewDirective] = useState<string>('');
+  const [directivesList, setDirectivesList] = useState<string[]>([]);
+  const [savingDirectives, setSavingDirectives] = useState<boolean>(false);
 
   // Load chatbot server configuration in real-time
   useEffect(() => {
@@ -76,6 +79,14 @@ export default function App() {
         setIsWebChatbotEnabled(data.web !== false);
         setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
         setIsMessengerChatbotEnabled(data.messenger !== false);
+        if (data.directivesList) {
+          setDirectivesList(data.directivesList);
+        } else if (data.customDirectives) {
+          const list = data.customDirectives.split('\n').map((item: string) => item.trim()).filter((item: string) => item.length > 0);
+          setDirectivesList(list);
+        } else {
+          setDirectivesList([]);
+        }
         localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
         localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
         localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
@@ -85,6 +96,47 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  const handleSaveDirectives = async () => {
+    if (!newDirective.trim()) return;
+    setSavingDirectives(true);
+    try {
+      const updatedList = [...directivesList, newDirective.trim()];
+      await customFetch('/api/config/chatbot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          directivesList: updatedList,
+          customDirectives: updatedList.join('\n')
+        })
+      });
+      setNewDirective('');
+      setAppNotif({ type: 'success', text: "¡Directriz agregada de inmediato al chatbot!" });
+      setTimeout(() => setAppNotif(null), 3000);
+    } catch (err) {
+      console.error("Error saving directives:", err);
+    } finally {
+      setSavingDirectives(false);
+    }
+  };
+
+  const handleRemoveDirective = async (indexToRemove: number) => {
+    try {
+      const updatedList = directivesList.filter((_, idx) => idx !== indexToRemove);
+      await customFetch('/api/config/chatbot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          directivesList: updatedList,
+          customDirectives: updatedList.join('\n')
+        })
+      });
+      setAppNotif({ type: 'success', text: "¡Directriz eliminada con éxito!" });
+      setTimeout(() => setAppNotif(null), 3000);
+    } catch (err) {
+      console.error("Error removing directive:", err);
+    }
+  };
 
   const handleToggleWebChatbot = () => {
     const newVal = !isWebChatbotEnabled;
@@ -848,6 +900,84 @@ export default function App() {
                           <span
                             className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${isMessengerChatbotEnabled ? 'translate-x-5' : 'translate-x-0'}`}
                           />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DIRECTIVAS DE CHATBOT IA CARD */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 animate-fade-in shadow-xs">
+                    <div>
+                      <h3 className="text-md font-bold text-gray-900 flex items-center">
+                        <Bot className="w-5 h-5 text-gray-800 mr-2" />
+                        Instrucciones y Directrices Personalizadas del Chatbot (IA)
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Establezca reglas de negocio complementarias, respuestas personalizadas, horarios específicos o políticas de atención. El chatbot integrará estas guías en tiempo real para sus respuestas.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs text-gray-600 leading-relaxed">
+                        <span className="font-bold text-gray-850 block mb-1">💡 Ejemplos de directrices que puedes agregar:</span>
+                        <ul className="list-disc pl-4 space-y-1 text-gray-400 text-[11px]">
+                          <li><strong>Respuestas fijas</strong>: <span className="text-gray-600">"Si te preguntan la hora de comida, diles que cerramos de 14:00 a 15:00."</span></li>
+                          <li><strong>Instrucciones de contacto</strong>: <span className="text-gray-600">"Para facturas, diles que envíen datos al correo facturas@kiotoauto.mx."</span></li>
+                          <li><strong>Garantías y Precios</strong>: <span className="text-gray-600">"Indica que la revisión de frenos cuesta $450 pesos y tiene 30 días de garantía."</span></li>
+                        </ul>
+                      </div>
+
+                      {/* LIST OF ACTIVE DIRECTIVES */}
+                      {directivesList.length > 0 && (
+                        <div className="space-y-2">
+                          <span className="text-xs font-bold text-gray-700 block select-none">📌 Directrices e instrucciones activas en tiempo real:</span>
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            {directivesList.map((directive, idx) => (
+                              <div key={idx} className="bg-emerald-50/40 border border-emerald-150 rounded-xl p-3 flex justify-between items-start gap-4 text-xs text-neutral-800 leading-relaxed">
+                                <span className="flex-1 whitespace-pre-wrap select-text">{directive}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDirective(idx)}
+                                  className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded-lg transition duration-150 border-0 cursor-pointer shrink-0"
+                                  title="Eliminar directriz"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-gray-100">
+                        <span className="text-xs font-bold text-gray-700 block mb-1.5 select-none">✏️ Agregar nueva directriz o instrucción al Chatbot:</span>
+                        <textarea
+                          rows={4}
+                          value={newDirective}
+                          onChange={(e) => setNewDirective(e.target.value)}
+                          placeholder="Escriba aquí la instrucción. Ejemplo:
+- El costo de diagnóstico estándar es de $500 pesos.
+- Las garantías de reparaciones mayores son de 3 meses.
+- Para emergencias vehiculares o grúas, dales el número directo +52 55 (4321) 0988."
+                          className="w-full bg-white border border-gray-200 rounded-xl p-3.5 text-xs text-gray-900 placeholder-gray-400 focus:ring-1 focus:ring-gray-950 focus:outline-none focus:border-gray-950 font-sans leading-relaxed transition-all min-h-[100px]"
+                        />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSaveDirectives}
+                          disabled={savingDirectives || !newDirective.trim()}
+                          className="px-5 py-2.5 bg-neutral-950 hover:bg-neutral-800 disabled:bg-gray-300 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition duration-150 cursor-pointer flex items-center space-x-1 border-0"
+                        >
+                          {savingDirectives ? (
+                            <span>Guardando Directriz...</span>
+                          ) : (
+                            <>
+                              <Bot className="w-4 h-4 mr-1 inline" />
+                              <span>Aplicar Directriz al Chatbot</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
