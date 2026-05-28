@@ -54,6 +54,12 @@ export default function AsesorForm({ currentUser, onBookingSuccess }: AsesorForm
       return;
     }
 
+    const cleanVin = sVin.trim().toUpperCase();
+    if (cleanVin.length !== 17) {
+      showError(`El NIV de vehículo debe constar de exactamente 17 caracteres (actual: ${cleanVin.length}).`);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await customFetch('/api/servicios', {
@@ -181,7 +187,7 @@ export default function AsesorForm({ currentUser, onBookingSuccess }: AsesorForm
                   type="text"
                   id="s-form-plate"
                   value={sPlate}
-                  onChange={(e) => setSPlate(e.target.value)}
+                  onChange={(e) => setSPlate(e.target.value.toUpperCase())}
                   placeholder="Ej. GHY-332-A"
                   className="w-full bg-gray-50 border border-gray-200 text-gray-950 placeholder-gray-400 rounded-lg py-2 pl-9 pr-3 text-xs focus:ring-1 focus:ring-gray-950 focus:outline-none uppercase"
                   required
@@ -197,7 +203,7 @@ export default function AsesorForm({ currentUser, onBookingSuccess }: AsesorForm
                   type="text"
                   id="s-form-vin"
                   value={sVin}
-                  onChange={(e) => setSVin(e.target.value)}
+                  onChange={(e) => setSVin(e.target.value.toUpperCase())}
                   placeholder="NIV de 17 caracteres"
                   className="w-full bg-gray-50 border border-gray-200 text-gray-950 placeholder-gray-400 rounded-lg py-2 pl-9 pr-3 text-xs focus:ring-1 focus:ring-gray-950 focus:outline-none uppercase"
                   maxLength={17}

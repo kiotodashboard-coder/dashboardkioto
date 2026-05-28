@@ -69,9 +69,15 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
     }
   };
 
+  const [isDashboardEnabled, setIsDashboardEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('isDashboardEnabled') !== 'false';
+  });
+
   useEffect(() => {
-    fetchAiInsights();
-  }, []);
+    if (isDashboardEnabled) {
+      fetchAiInsights();
+    }
+  }, [isDashboardEnabled]);
 
   // FILTRADO REACTIVO DE SERVICIOS
   const filteredServices = services.filter(s => {
@@ -478,8 +484,68 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
   return (
     <div className="space-y-6 animate-fade-in select-none">
       
-      {/* Top Welcome Row & Stats Recap */}
-      <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+      {/* ON / OFF Toggle Widget to Save Database Queries */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center space-x-3 text-left">
+          <div className={`w-3.5 h-3.5 rounded-full ${isDashboardEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'} shrink-0`} />
+          <div>
+            <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+              {isDashboardEnabled ? 'Visualización de Métricas: ENCENDIDO' : 'Visualización de Métricas: APAGADO'}
+            </h4>
+            <p className="text-[11px] text-gray-500 leading-normal">
+              {isDashboardEnabled 
+                ? 'El sistema carga todas las gráficas, métricas y análisis de IA consumiendo lecturas de base de datos.' 
+                : 'Métricas apagadas. Se ahorran consultas redundantes a Firestore y procesamiento de cómputo en la nube.'}
+            </p>
+          </div>
+        </div>
+        
+        <button
+          onClick={() => {
+            const nextVal = !isDashboardEnabled;
+            setIsDashboardEnabled(nextVal);
+            localStorage.setItem('isDashboardEnabled', String(nextVal));
+          }}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+            isDashboardEnabled 
+              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200' 
+              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+          }`}
+        >
+          {isDashboardEnabled ? 'Apagar Dashboard (Ahorrar consultas)' : 'Encender Dashboard'}
+        </button>
+      </div>
+
+      {!isDashboardEnabled ? (
+        <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center shadow-xs space-y-4">
+          <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center mx-auto">
+            <BarChart3 className="w-8 h-8 text-neutral-400" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Dashboard en Modo Suspensión</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Has desactivado la carga del Dashboard para optimizar el rendimiento y evitar consultas automáticas o llamados redundantes a la base de datos de producción de Kioto.
+            </p>
+            <p className="text-[10px] text-orange-600 font-bold bg-orange-50 py-1.5 px-3 rounded-lg inline-block border border-orange-150 uppercase tracking-wide">
+              ⚡ Modo Ahorro de Consultas Activado
+            </p>
+          </div>
+          <div>
+            <button
+              onClick={() => {
+                setIsDashboardEnabled(true);
+                localStorage.setItem('isDashboardEnabled', 'true');
+              }}
+              className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow cursor-pointer"
+            >
+              Encender Dashboard de Métricas
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Top Welcome Row & Stats Recap */}
+          <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-100 pb-5">
           <div>
             <h2 className="text-lg font-black text-gray-950 uppercase tracking-wider flex items-center gap-2">
@@ -1186,6 +1252,8 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
           </div>
 
         </div>
+      )}
+        </>
       )}
 
     </div>

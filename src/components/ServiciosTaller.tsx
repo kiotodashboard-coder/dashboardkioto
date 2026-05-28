@@ -425,6 +425,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'hoy' | 'servicio agendado' | 'vehículo recibido' | 'en proceso' | 'atendido' | 'entregado'>('todos');
 
   // UI status overlays
   const [loading, setLoading] = useState(false);
@@ -616,6 +617,17 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     e.preventDefault();
     if (!clientName || !clientPhone || !vehicle || !vin || !plate || !serviceType || !appointmentDate) {
       setErrorMsg('Por favor, complete todos los campos requeridos.');
+      return;
+    }
+
+    const cleanVin = vin.trim().toUpperCase();
+    if (cleanVin.length !== 17) {
+      setErrorMsg(`El NIV del vehículo debe tener exactamente 17 caracteres (actual: ${cleanVin.length}).`);
+      triggerAlertPop(
+        `El NIV suministrado tiene ${cleanVin.length} dígitos. La normativa nacional exige exactamente 17 caracteres alfanuméricos. Corríjalo para continuar.`,
+        "NIV Inválido",
+        "error"
+      );
       return;
     }
 
@@ -914,6 +926,19 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   };
 
   const filteredServices = services.filter((s) => {
+    // 1. Status & Date filters
+    if (statusFilter !== 'todos') {
+      if (statusFilter === 'hoy') {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const servDate = s.appointmentDate ? s.appointmentDate.split('T')[0] : '';
+        if (servDate !== todayStr) return false;
+      } else {
+        if (s.status !== statusFilter) return false;
+      }
+    }
+
+    // 2. Search query filter
+    if (!searchTerm) return true;
     return (
       s.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1160,6 +1185,39 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 placeholder="Filtrar por nombre, placa o folio del servicio..."
                 className="w-full bg-white border border-gray-200.5 rounded-xl py-2.5 pl-9 pr-3 text-xs text-gray-800 focus:ring-1 focus:ring-stone-900 focus:outline-none"
               />
+            </div>
+
+            {/* Filtros Fijos Rápidos de Estatus y Fecha */}
+            <div className="px-5 py-2.5 bg-gray-50/20 border-b border-gray-100 flex flex-wrap gap-1.5 items-center">
+              <span className="text-[9px] font-black uppercase tracking-wider text-gray-405 mr-1 select-none">Filtrar por:</span>
+              {[
+                { label: 'Todos', value: 'todos' },
+                { label: 'Hoy 📅', value: 'hoy' },
+                { label: 'Agendado 🗓', value: 'servicio agendado' },
+                { label: 'Recibido 🔑', value: 'vehículo recibido' },
+                { label: 'En Proceso ⚙️', value: 'en proceso' },
+                { label: 'Atendido ✅', value: 'atendido' },
+                { label: 'Entregado 🚙', value: 'entregado' }
+              ].map((pill) => {
+                const isActive = statusFilter === pill.value;
+                return (
+                  <button
+                    key={pill.value}
+                    onClick={() => {
+                      setStatusFilter(pill.value as any);
+                      // Clear selected IDs to prevent multi-select leaks across filters
+                      setSelectedIds(new Set());
+                    }}
+                    className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition-all cursor-pointer select-none leading-none uppercase tracking-wide duration-150 ${
+                      isActive 
+                        ? 'bg-zinc-950 border-zinc-950 text-white shadow-2xs' 
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-slate-50 hover:text-zinc-950'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="overflow-x-auto">
@@ -2004,22 +2062,24 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             {/* Print Friendly CSS Injector */}
             <style>{`
               @media print {
-                body {
-                  background-color: white !important;
-                  color: black !important;
+                body * {
+                  visibility: hidden !important;
                 }
-                #print-overlay-document {
-                  position: static !important;
-                  background-color: white !important;
-                  color: black !important;
-                  overflow: visible !important;
-                  padding: 0 !important;
+                #printable-service-sheet, #printable-service-sheet * {
+                  visibility: visible !important;
                 }
                 #printable-service-sheet {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
                   margin: 0 !important;
-                  padding: 0 !important;
-                  max-width: 100% !important;
+                  padding: 1cm !important;
                   box-shadow: none !important;
+                  border: none !important;
+                }
+                @page {
+                  margin: 0;
                 }
               }
             `}</style>
