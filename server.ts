@@ -381,10 +381,47 @@ app.delete("/api/users/:id", async (req, res) => {
 // --- VISITAS MANAGEMENT REMOVED ---
 
 // --- SERVICIOS MANAGEMENT ---
+function isPastTolerance(appointmentDateStr: string, toleranceMinutes: number): boolean {
+  if (!appointmentDateStr) return false;
+  const parts = appointmentDateStr.split('T');
+  if (parts.length !== 2) return false;
+  const [datePart, timePart] = parts;
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hour, min] = timePart.split(':').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(min)) return false;
+
+  const apptLocalTime = Date.UTC(year, month - 1, day, hour, min);
+  const cdmxNow = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours behind UTC
+  const cdmxLocalTime = Date.UTC(
+    cdmxNow.getUTCFullYear(),
+    cdmxNow.getUTCMonth(),
+    cdmxNow.getUTCDate(),
+    cdmxNow.getUTCHours(),
+    cdmxNow.getUTCMinutes()
+  );
+
+  const diffMinutes = (cdmxLocalTime - apptLocalTime) / (1000 * 60);
+  return diffMinutes >= toleranceMinutes;
+}
+
 app.get("/api/servicios", async (req, res) => {
   try {
     const snap = await getDocs(collection(db, "servicios"));
-    const servicios = snap.docs.map(d => d.data());
+    const servicios = snap.docs.map(d => d.data() as any);
+
+    // Get tolerance config from database
+    const configRef = doc(db, "config", "programming");
+    const configSnap = await getDoc(configRef);
+    const toleranceMinutes = configSnap.exists() ? (configSnap.data().toleranceMinutes ?? 15) : 15;
+
+    for (const s of servicios) {
+      if (s.status === 'servicio agendado' && s.appointmentDate) {
+        if (isPastTolerance(s.appointmentDate, toleranceMinutes)) {
+          s.status = 'En Espera';
+          await setDoc(doc(db, "servicios", s.id), { status: 'En Espera' }, { merge: true });
+        }
+      }
+    }
 
     servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     res.json(servicios);
@@ -531,7 +568,10 @@ app.put("/api/servicios/:id", async (req, res) => {
       "entregado"
     ];
     if (status && status !== oldStatus) {
-      const oldIdx = statusOrder.indexOf(oldStatus);
+      if (oldStatus === 'En Espera' && status === 'servicio agendado') {
+        return res.status(400).json({ error: "Transición de estatus bloqueada. No está permitido cambiar el servicio a un estatus anterior." });
+      }
+      const oldIdx = oldStatus === 'En Espera' ? 0 : statusOrder.indexOf(oldStatus);
       const newIdx = statusOrder.indexOf(status);
       if (oldIdx !== -1 && newIdx !== -1 && newIdx < oldIdx) {
         return res.status(400).json({ error: "Transición de estatus bloqueada. No está permitido cambiar el servicio a un estatus anterior." });
@@ -660,6 +700,9 @@ app.get("/api/config/programming", async (req, res) => {
           'Direcciones y Limpiaparabrisas'
         ];
       }
+      if (data.toleranceMinutes === undefined) {
+        data.toleranceMinutes = 15;
+      }
       res.json(data);
     } else {
       res.json({
@@ -667,6 +710,7 @@ app.get("/api/config/programming", async (req, res) => {
         slotIntervalMinutes: 30,
         openingTime: "08:00",
         closingTime: "18:00",
+        toleranceMinutes: 15,
         checklistItems: [
           'Nivel de Aceite de Motor',
           'Líquido de Dirección',
@@ -699,7 +743,7 @@ app.get("/api/config/programming", async (req, res) => {
 });
 
 app.post("/api/config/programming", async (req, res) => {
-  const { maxServicesPerSlot, slotIntervalMinutes, openingTime, closingTime, checklistItems } = req.body;
+  const { maxServicesPerSlot, slotIntervalMinutes, openingTime, closingTime, checklistItems, toleranceMinutes } = req.body;
   try {
     const docRef = doc(db, "config", "programming");
     const updated = {
@@ -707,6 +751,7 @@ app.post("/api/config/programming", async (req, res) => {
       slotIntervalMinutes: Number(slotIntervalMinutes) || 30,
       openingTime: openingTime || "08:00",
       closingTime: closingTime || "18:00",
+      toleranceMinutes: Number(toleranceMinutes) !== undefined ? Number(toleranceMinutes) : 15,
       checklistItems: Array.isArray(checklistItems) ? checklistItems : []
     };
     await setDoc(docRef, updated);
@@ -1473,8 +1518,8 @@ app.post("/api/chats/message", async (req, res) => {
 
 INFORMACIÓN COMPLEMENTARIA DE LA AGENCIA Y PÁGINA (DIRECCIÓN, TELÉFONO Y HORARIOS):
 - Nombre del Taller: Automotriz Kioto
-- Teléfono de Contacto Técnico / WhatsApp: +52 55 (4321) 0987
-- Dirección Física Principal de Taller: Av. Paseo de la Reforma 2026, Juárez, Cuauhtémoc, 06600 Ciudad de México, CDMX, México
+- Teléfono de Contacto Técnico / WhatsApp: 55 7489 7163
+- Dirección Física Principal de Taller: Av. Instituto Politécnico Nacional 1999, Lindavista Nte., Gustavo A. Madero, 07300 Ciudad de México, CDMX
 - Horario de Apertura : ${openTime}
 - Horario de Cierre : ${closeTime}
 - Región de Atención: México (GMT-6 Central de México)

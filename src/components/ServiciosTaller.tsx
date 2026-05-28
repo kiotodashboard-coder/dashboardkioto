@@ -723,7 +723,16 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       'entregado'
     ];
 
-    const currentIdx = statusOrder.indexOf(service.status);
+    if (service.status === 'En Espera' && newStatus === 'servicio agendado') {
+      triggerAlertPop(
+        `No está permitido regresar a un estatus anterior una vez que el flujo del taller ha avanzado o el tiempo ha expirado.`,
+        "Operación Bloqueada",
+        "error"
+      );
+      return;
+    }
+
+    const currentIdx = service.status === 'En Espera' ? 0 : statusOrder.indexOf(service.status);
     const targetIdx = statusOrder.indexOf(newStatus);
 
     if (currentIdx === targetIdx) return;
@@ -1001,6 +1010,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
     switch (status) {
       case 'servicio agendado': 
         return 'bg-amber-50 text-amber-800 border-amber-200/60 hover:bg-amber-100/50';
+      case 'En Espera':
+        return 'bg-rose-50 text-rose-800 border-rose-250 hover:bg-rose-100/50 animate-pulse';
       case 'vehículo recibido': 
         return 'bg-indigo-50 text-indigo-800 border-indigo-200/50 hover:bg-indigo-100/50';
       case 'en proceso': 
@@ -1333,19 +1344,39 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
                           <td className="py-3.5 px-2.5">
                             {(() => {
-                              const statusOrder = ['servicio agendado', 'vehículo recibido', 'en proceso', 'atendido', 'entregado'];
-                              const curIdx = statusOrder.indexOf(service.status);
+                              const getOptionDisabled = (opt: string) => {
+                                if (opt === service.status) return false;
+                                if (service.status === 'En Espera') {
+                                  return opt !== 'vehículo recibido';
+                                }
+                                if (service.status === 'servicio agendado') {
+                                  return opt !== 'vehículo recibido';
+                                }
+                                if (service.status === 'vehículo recibido') {
+                                  return opt !== 'en proceso';
+                                }
+                                if (service.status === 'en proceso') {
+                                  return opt !== 'atendido';
+                                }
+                                if (service.status === 'atendido') {
+                                  return opt !== 'entregado';
+                                }
+                                return true;
+                              };
                               return (
                                 <select
                                   value={service.status}
                                   onChange={(e) => handleStatusChangeRequest(service, e.target.value as any)}
                                   className={`text-[11px] font-black rounded-lg px-2 py-1.5 border cursor-pointer focus:outline-none transition-all uppercase tracking-wider ${getStatusBadgeStyles(service.status)}`}
                                 >
-                                  <option value="servicio agendado" disabled={0 < curIdx || 0 > curIdx + 1}>Agendado</option>
-                                  <option value="vehículo recibido" disabled={1 < curIdx || 1 > curIdx + 1}>Recibido</option>
-                                  <option value="en proceso" disabled={2 < curIdx || 2 > curIdx + 1}>En proceso</option>
-                                  <option value="atendido" disabled={3 < curIdx || 3 > curIdx + 1}>Atendido</option>
-                                  <option value="entregado" disabled={4 < curIdx || 4 > curIdx + 1}>Entregado</option>
+                                  <option value="servicio agendado" disabled={getOptionDisabled('servicio agendado')}>Agendado</option>
+                                  {service.status === 'En Espera' && (
+                                    <option value="En Espera" disabled={getOptionDisabled('En Espera')}>En Espera</option>
+                                  )}
+                                  <option value="vehículo recibido" disabled={getOptionDisabled('vehículo recibido')}>Recibido</option>
+                                  <option value="en proceso" disabled={getOptionDisabled('en proceso')}>En proceso</option>
+                                  <option value="atendido" disabled={getOptionDisabled('atendido')}>Atendido</option>
+                                  <option value="entregado" disabled={getOptionDisabled('entregado')}>Entregado</option>
                                 </select>
                               );
                             })()}
@@ -2063,7 +2094,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <style>{`
               @media print {
                 /* Reset html, body, and major containers to allow natural multi-page static flow */
-                html, body, #root, #print-overlay-document {
+                html, body {
                   position: static !important;
                   overflow: visible !important;
                   height: auto !important;
@@ -2076,34 +2107,151 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   margin: 0 !important;
                   padding: 0 !important;
                 }
-                /* Hide everything by default to exclude screens/headers */
+                
+                /* Hide everything except our print overlay container */
+                body > *:not(#print-overlay-document):not(#root) {
+                  display: none !important;
+                }
+                
+                #root {
+                  display: block !important;
+                  position: static !important;
+                  overflow: visible !important;
+                  height: auto !important;
+                  width: 100% !important;
+                }
+                #root > *:not(#print-overlay-document) {
+                  display: none !important;
+                }
+                
+                /* Force hide other elements by default */
                 body * {
                   visibility: hidden !important;
                 }
-                /* Exclusively show only the printable sheet and all of its descendants */
-                #printable-service-sheet, #printable-service-sheet * {
+                #print-overlay-document, #print-overlay-document *, #printable-service-sheet, #printable-service-sheet * {
                   visibility: visible !important;
                 }
-                /* Style the report sheet container itself to behave as a normal block element */
-                #printable-service-sheet {
-                  position: static !important;
+                
+                #print-overlay-document {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  background: white !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
                   display: block !important;
+                  overflow: visible !important;
+                  visibility: visible !important;
+                }
+                
+                .print\:hidden {
+                  display: none !important;
+                }
+
+                #printable-service-sheet {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
                   width: 100% !important;
                   max-width: 100% !important;
                   margin: 0 !important;
-                  padding: 1.2cm !important;
+                  padding: 0.3cm !important;
                   box-shadow: none !important;
                   border: none !important;
                   background: white !important;
+                  visibility: visible !important;
+                  font-size: 9px !important;
+                  line-height: 1.15 !important;
                 }
+                
                 /* Avoid content layout from breaking mid-block */
                 .print-block-avoid {
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
                 }
+
+                /* Space Optimization overrides to keep the entire document under 3 pages */
+                #printable-service-sheet .mb-6,
+                #printable-service-sheet .mb-5,
+                #printable-service-sheet .mb-4 {
+                  margin-bottom: 0.25rem !important;
+                }
+                #printable-service-sheet .pb-6,
+                #printable-service-sheet .pb-5,
+                #printable-service-sheet .pb-4 {
+                  padding-bottom: 0.25rem !important;
+                }
+                #printable-service-sheet .pt-6,
+                #printable-service-sheet .pt-5,
+                #printable-service-sheet .pt-4 {
+                  padding-top: 0.25rem !important;
+                }
+                
+                #printable-service-sheet .p-5,
+                #printable-service-sheet .p-4 {
+                  padding: 0.35rem !important;
+                }
+                #printable-service-sheet .p-3 {
+                  padding: 0.25rem !important;
+                }
+                #printable-service-sheet .grid {
+                  gap: 0.25rem !important;
+                }
+                #printable-service-sheet select, 
+                #printable-service-sheet input {
+                  padding-top: 0.1rem !important;
+                  padding-bottom: 0.1rem !important;
+                }
+                
+                /* Text and title scaling */
+                #printable-service-sheet h2 {
+                  font-size: 13px !important;
+                }
+                #printable-service-sheet h4 {
+                  font-size: 9px !important;
+                  margin-bottom: 0.15rem !important;
+                  padding-bottom: 0.1rem !important;
+                }
+                #printable-service-sheet .text-xs {
+                  font-size: 8px !important;
+                }
+                #printable-service-sheet .text-sm {
+                  font-size: 8.5px !important;
+                }
+                
+                /* Avoid heavy black ink boxes for image holders */
+                #printable-service-sheet .bg-neutral-900,
+                #printable-service-sheet .bg-black {
+                  background-color: #fafafa !important;
+                }
+                
+                /* Scale images down so they do not bloat the paper heights */
+                #printable-service-sheet img {
+                  max-height: 48px !important;
+                  width: auto !important;
+                  object-fit: contain !important;
+                  margin: 0 auto !important;
+                }
+                #printable-service-sheet .aspect-video {
+                  aspect-ratio: auto !important;
+                  height: 52px !important;
+                }
+
+                /* Official ID pictures special limits */
+                #printable-service-sheet .max-h-36 {
+                  max-height: 55px !important;
+                }
+                
+                /* Signatures container p-4 adjustment */
+                #printable-service-sheet .p-4.rounded-xl {
+                  padding: 0.25rem !important;
+                }
+                
                 @page {
                   size: letter;
-                  margin: 1.2cm;
+                  margin: 0.5cm 0.4cm 0.5cm 0.4cm;
                 }
               }
             `}</style>
@@ -2255,7 +2403,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Checklist Técnico acomodado a lo ancho de la hoja (3-Column Grid) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs print-block-avoid">
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs">
               <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
                 📋 Diagnóstico Completo y Checklist Técnico Vehicular
               </h4>

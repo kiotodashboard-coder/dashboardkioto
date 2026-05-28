@@ -98,7 +98,12 @@ export default function KanbanBoard({ services, onServiceUpdated, isAdmin }: Kan
       {/* Horizontal grid board */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {statuses.map((columnStatus) => {
-          const filteredServices = services.filter((s) => s.status === columnStatus);
+          const filteredServices = services.filter((s) => {
+            if (columnStatus === 'servicio agendado') {
+              return s.status === 'servicio agendado' || s.status === 'En Espera';
+            }
+            return s.status === columnStatus;
+          });
           
           return (
             <div 
@@ -126,19 +131,30 @@ export default function KanbanBoard({ services, onServiceUpdated, isAdmin }: Kan
                   filteredServices.map((service) => (
                     <div 
                       key={service.id}
-                      className="bg-white rounded-lg border border-gray-200 p-3.5 shadow-xs space-y-3 hover:shadow-xs transition-shadow relative"
+                      className={`bg-white rounded-lg border p-3.5 shadow-xs space-y-3 hover:shadow-xs transition-colors relative ${
+                        service.status === 'En Espera' 
+                          ? 'border-rose-300 bg-rose-50/10' 
+                          : 'border-gray-200'
+                      }`}
                     >
-                      {/* Source tag */}
-                      <span className={`absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded text-[8.5px] font-semibold tracking-wider uppercase border ${
-                        service.source === 'chatbot' 
-                          ? 'bg-purple-50 text-purple-700 border-purple-100' 
-                          : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                      }`}>
-                        {service.source}
-                      </span>
+                      {/* Status/Source indicator */}
+                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                        {service.status === 'En Espera' && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-rose-150 text-rose-700 border border-rose-350 animate-pulse uppercase tracking-wider">
+                            En Espera ⏱️
+                          </span>
+                        )}
+                        <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-semibold tracking-wider uppercase border ${
+                          service.source === 'chatbot' 
+                            ? 'bg-purple-50 text-purple-700 border-purple-100' 
+                            : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                        }`}>
+                          {service.source}
+                        </span>
+                      </div>
 
-                      <div>
-                        <h4 className="font-bold text-xs text-gray-950 pr-12 line-clamp-1">{service.clientName}</h4>
+                      <div className="pt-1">
+                        <h4 className="font-bold text-xs text-gray-950 pr-20 line-clamp-1">{service.clientName}</h4>
                         <p className="text-[10px] font-mono text-gray-500 mt-0.5">{service.clientPhone}</p>
                       </div>
 

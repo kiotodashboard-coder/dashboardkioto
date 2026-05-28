@@ -119,6 +119,29 @@ async function ensureClientSeeded() {
   }
 }
 
+function isPastTolerance(appointmentDateStr: string, toleranceMinutes: number): boolean {
+  if (!appointmentDateStr) return false;
+  const parts = appointmentDateStr.split('T');
+  if (parts.length !== 2) return false;
+  const [datePart, timePart] = parts;
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hour, min] = timePart.split(':').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(min)) return false;
+
+  const apptLocalTime = Date.UTC(year, month - 1, day, hour, min);
+  const cdmxNow = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours behind UTC
+  const cdmxLocalTime = Date.UTC(
+    cdmxNow.getUTCFullYear(),
+    cdmxNow.getUTCMonth(),
+    cdmxNow.getUTCDate(),
+    cdmxNow.getUTCHours(),
+    cdmxNow.getUTCMinutes()
+  );
+
+  const diffMinutes = (cdmxLocalTime - apptLocalTime) / (1000 * 60);
+  return diffMinutes >= toleranceMinutes;
+}
+
 // Execute core business services directly in browser
 export async function executeClientRequest(url: string, init?: RequestInit): Promise<MockResponse> {
   await ensureClientSeeded();
@@ -130,7 +153,21 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
   if (url === "/api/servicios" && method === "GET") {
     try {
       const snap = await getDocs(collection(dbClient, "servicios"));
-      const servicios = snap.docs.map(d => d.data());
+      const servicios = snap.docs.map(d => d.data() as any);
+
+      // Get tolerance config
+      const docRef = doc(dbClient, "config", "programming");
+      const configSnap = await getDoc(docRef);
+      const toleranceMinutes = configSnap.exists() ? (configSnap.data().toleranceMinutes ?? 15) : 15;
+
+      for (const s of servicios) {
+        if (s.status === 'servicio agendado' && s.appointmentDate) {
+          if (isPastTolerance(s.appointmentDate, toleranceMinutes)) {
+            s.status = 'En Espera';
+            await setDoc(doc(dbClient, "servicios", s.id), { status: 'En Espera' }, { merge: true });
+          }
+        }
+      }
 
       servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       return new MockResponse(servicios);
@@ -454,13 +491,18 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       const ref = doc(dbClient, "config", "programming");
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        return new MockResponse(snap.data());
+        const d = snap.data();
+        if (d.toleranceMinutes === undefined) {
+          d.toleranceMinutes = 15;
+        }
+        return new MockResponse(d);
       }
       return new MockResponse({
         maxServicesPerSlot: 2,
         slotIntervalMinutes: 30,
         openingTime: "08:00",
-        closingTime: "18:00"
+        closingTime: "18:00",
+        toleranceMinutes: 15
       });
     } catch (err: any) {
       return new MockResponse({ error: err.message }, 500);
@@ -475,7 +517,9 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         maxServicesPerSlot: Number(body.maxServicesPerSlot) || 2,
         slotIntervalMinutes: Number(body.slotIntervalMinutes) || 30,
         openingTime: body.openingTime || "08:00",
-        closingTime: body.closingTime || "18:00"
+        closingTime: body.closingTime || "18:00",
+        toleranceMinutes: Number(body.toleranceMinutes) !== undefined ? Number(body.toleranceMinutes) : 15,
+        checklistItems: Array.isArray(body.checklistItems) ? body.checklistItems : []
       };
       await setDoc(ref, updated);
       return new MockResponse({ success: true, config: updated });

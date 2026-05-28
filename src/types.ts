@@ -24,7 +24,7 @@ export interface ServicioMecanico {
   serviceType: string; // e.g., cambio de aceite, afinación, frenos
   appointmentDate: string; // YYYY-MM-DDTHH:mm representation
   assignedServiceUser: string; // service specialist doing the work
-  status: 'servicio agendado' | 'vehículo recibido' | 'en proceso' | 'atendido' | 'entregado';
+  status: 'servicio agendado' | 'En Espera' | 'vehículo recibido' | 'en proceso' | 'atendido' | 'entregado';
   source: 'asesor' | 'chatbot' | 'whatsapp' | 'facebook';
   notes: string;
   createdAt: string;

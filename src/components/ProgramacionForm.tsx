@@ -8,6 +8,7 @@ interface ProgrammingConfig {
   openingTime: string;
   closingTime: string;
   checklistItems?: string[];
+  toleranceMinutes?: number;
 }
 
 export default function ProgramacionForm() {
@@ -16,7 +17,8 @@ export default function ProgramacionForm() {
     slotIntervalMinutes: 30,
     openingTime: '08:00',
     closingTime: '18:00',
-    checklistItems: []
+    checklistItems: [],
+    toleranceMinutes: 15
   });
   const [checklistItems, setChecklistItems] = useState<string[]>([]);
   const [newItemText, setNewItemText] = useState('');
@@ -298,6 +300,31 @@ export default function ProgramacionForm() {
                     onChange={(e) => setConfig({ ...config, closingTime: e.target.value })}
                     className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all font-mono"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1.5">
+                    ⏱️ Minutos de tolerancia de llegada
+                  </label>
+                  <select
+                    id="prog-tolerance-mins"
+                    value={config.toleranceMinutes ?? 15}
+                    onChange={(e) => setConfig({ ...config, toleranceMinutes: Number(e.target.value) })}
+                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-xl py-2.5 px-3.5 text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none transition-all"
+                  >
+                    <option value={5}>5 Minutos (Estricta)</option>
+                    <option value={10}>10 Minutos</option>
+                    <option value={15}>15 Minutos (Recomendada)</option>
+                    <option value={20}>20 Minutos</option>
+                    <option value={30}>30 Minutos (Flexible)</option>
+                    <option value={45}>45 Minutos</option>
+                    <option value={60}>60 Minutos (1 Hora)</option>
+                  </select>
+                  <p className="text-[9px] text-gray-400 mt-1">
+                    Tiempo de gracia antes de que las citas pasen automáticamente de "Agendado" a estatus "En Espera".
+                  </p>
                 </div>
               </div>
 
