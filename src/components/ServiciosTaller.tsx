@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { customFetch } from '../utils/api';
 import { 
   Wrench, 
@@ -2060,7 +2061,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       {/* =======================================================
           REPORT SERVICE PRINT LAYOUT VIEW OVERLAY
           ======================================================= */}
-      {printService && (
+      {printService && createPortal(
         <div id="print-overlay-document" className="fixed inset-0 bg-neutral-900 bg-zinc-950 p-4 md:p-8 z-50 overflow-y-auto animate-fade-in flex flex-col justify-start items-center select-text">
           
           {/* Top controller actions - hidden on paper print */}
@@ -2093,7 +2094,12 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             {/* Print Friendly CSS Injector */}
             <style>{`
               @media print {
-                /* Reset html, body, and major containers to allow natural multi-page static flow */
+                /* Completely collapse application root container to prevent ghost blanks */
+                #root {
+                  display: none !important;
+                }
+                
+                /* Reset html and body for pristine continuous flow */
                 html, body {
                   position: static !important;
                   overflow: visible !important;
@@ -2108,32 +2114,9 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   padding: 0 !important;
                 }
                 
-                /* Hide everything except our print overlay container */
-                body > *:not(#print-overlay-document):not(#root) {
-                  display: none !important;
-                }
-                
-                #root {
-                  display: block !important;
-                  position: static !important;
-                  overflow: visible !important;
-                  height: auto !important;
-                  width: 100% !important;
-                }
-                #root > *:not(#print-overlay-document) {
-                  display: none !important;
-                }
-                
-                /* Force hide other elements by default */
-                body * {
-                  visibility: hidden !important;
-                }
-                #print-overlay-document, #print-overlay-document *, #printable-service-sheet, #printable-service-sheet * {
-                  visibility: visible !important;
-                }
-                
+                /* Format print overlay wrapper to lay out natively */
                 #print-overlay-document {
-                  position: absolute !important;
+                  position: static !important;
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
@@ -2151,18 +2134,18 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 }
 
                 #printable-service-sheet {
-                  position: absolute !important;
+                  position: static !important;
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
                   max-width: 100% !important;
-                  margin: 0 !important;
-                  padding: 0.3cm !important;
+                  margin: 0 auto !important;
+                  padding: 0.2cm 0.1cm !important;
                   box-shadow: none !important;
                   border: none !important;
                   background: white !important;
                   visibility: visible !important;
-                  font-size: 9px !important;
+                  font-size: 9.5px !important;
                   line-height: 1.15 !important;
                 }
                 
@@ -2524,7 +2507,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* =======================================================
