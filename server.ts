@@ -378,6 +378,13 @@ function isQuotaOrRateLimitError(err: any): boolean {
   return msg.includes("429") || msg.includes("quota") || msg.includes("limit") || msg.includes("resource_exhausted") || msg.includes("exhausted");
 }
 
+function isTransientOrUnavailableError(err: any): boolean {
+  if (!err) return false;
+  if (err.status === 503 || err.statusCode === 503 || err.status === 500 || err.statusCode === 500) return true;
+  const msg = String(err.message || err).toLowerCase();
+  return msg.includes("503") || msg.includes("unavailable") || msg.includes("high demand") || msg.includes("temporary") || msg.includes("overloaded") || msg.includes("try again later") || msg.includes("server error");
+}
+
 function isModelExhausted(model: string): boolean {
   const expiry = exhaustedModels.get(model);
   if (!expiry) return false;
@@ -412,57 +419,54 @@ async function callGeminiWithRetry(client: any, params: any) {
     throw new Error("Quota exceeded for all Gemini models (429 RESOURCE_EXHAUSTED).");
   }
 
-  try {
-    const currentParams = { ...params, model: activeModel };
-    return await client.models.generateContent(currentParams);
-  } catch (err: any) {
-    if (isQuotaOrRateLimitError(err)) {
-      console.warn(`[Gemini Circuit Breaker] Rate/Quota limit hit for model ${activeModel}. Marking as exhausted.`);
-      markModelExhausted(activeModel);
-    }
-
-    // If we failed with primary and haven't tried backup, fall back now
-    if (activeModel === primaryModel) {
-      console.warn(`[Gemini Retry] Primary model (${primaryModel}) failed with error:`, err.message || err);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const currentParams = { ...params, model: activeModel };
+      return await client.models.generateContent(currentParams);
+    } catch (err: any) {
+      const isQuota = isQuotaOrRateLimitError(err);
+      const isTransient = isTransientOrUnavailableError(err);
       
-      if (isModelExhausted(backupModel)) {
-        console.warn(`[Gemini Circuit Breaker] Backup model ${backupModel} is also exhausted. Throwing error.`);
+      console.warn(`[Gemini Attempt ${attempt}/${maxAttempts}] Failed with model ${activeModel} due to: ${err.message || JSON.stringify(err)}`);
+
+      if (isQuota) {
+        console.warn(`[Gemini Circuit Breaker] Rate/Quota limit hit for model ${activeModel}. Marking as exhausted.`);
+        markModelExhausted(activeModel);
+      }
+
+      // If it is transient or quota and we have more attempts, wait and retry
+      if ((isQuota || isTransient) && attempt < maxAttempts) {
+        const delay = attempt * 800; // Fast retry: 800ms, 1600ms
+        console.log(`[Gemini Retry] Waiting ${delay}ms before retrying model ${activeModel}...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // If we exhausted all attempts for activeModel, or it is a non-retryable error, handle fallback
+      if (activeModel === primaryModel) {
+        if (isModelExhausted(backupModel)) {
+          console.warn(`[Gemini Circuit Breaker] Backup model ${backupModel} is also exhausted. Throwing error.`);
+          throw err;
+        }
+
+        console.log(`[Gemini Retry] Primary model failed all retries. Attempting fallback with backup model: ${backupModel}`);
+        try {
+          const backupParams = { ...params, model: backupModel };
+          const response = await client.models.generateContent(backupParams);
+          console.log(`[Gemini Retry] Backup model (${backupModel}) call succeeded!`);
+          return response;
+        } catch (backupErr: any) {
+          if (isQuotaOrRateLimitError(backupErr)) {
+            console.warn(`[Gemini Circuit Breaker] Rate/Quota limit hit for backup model ${backupModel}. Marking as exhausted.`);
+            markModelExhausted(backupModel);
+          }
+          console.warn(`[Gemini Retry] Backup model (${backupModel}) also failed:`, backupErr.message || JSON.stringify(backupErr));
+          throw backupErr;
+        }
+      } else {
         throw err;
       }
-
-      console.log(`[Gemini Retry] Attempting fallback with backup model: ${backupModel}`);
-      try {
-        const backupParams = { ...params, model: backupModel };
-        const response = await client.models.generateContent(backupParams);
-        console.log(`[Gemini Retry] Backup model (${backupModel}) call succeeded!`);
-        return response;
-      } catch (backupErr: any) {
-        if (isQuotaOrRateLimitError(backupErr)) {
-          console.warn(`[Gemini Circuit Breaker] Rate/Quota limit hit for backup model ${backupModel}. Marking as exhausted.`);
-          markModelExhausted(backupModel);
-        }
-        console.warn(`[Gemini Retry] Backup model (${backupModel}) also failed:`, backupErr.message || backupErr);
-        
-        console.log("[Gemini Retry] Waiting 1.0 seconds for a last-resort retry of primary model...");
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        try {
-          if (isModelExhausted(primaryModel)) {
-            throw backupErr;
-          }
-          const response = await client.models.generateContent(params);
-          console.log(`[Gemini Retry] Final primary retry succeeded!`);
-          return response;
-        } catch (finalErr: any) {
-          if (isQuotaOrRateLimitError(finalErr)) {
-            markModelExhausted(primaryModel);
-          }
-          console.warn("[Gemini Retry] All retries collapsed. Throwing error.");
-          throw finalErr;
-        }
-      }
-    } else {
-      console.warn(`[Gemini Retry] Call failed with model ${activeModel}:`, err.message || err);
-      throw err;
     }
   }
 }

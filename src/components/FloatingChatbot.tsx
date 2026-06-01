@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { dbClient, customFetch } from '../utils/api';
+import { customFetch } from '../utils/api';
 import { 
   MessageSquare, 
   Send, 
@@ -51,16 +50,21 @@ export default function FloatingChatbot({ onAppointmentBooked }: FloatingChatbot
   const [isWebChatbotEnabled, setIsWebChatbotEnabled] = useState<boolean>(() => localStorage.getItem('kioto_chatbot_web') !== 'false');
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setIsWebChatbotEnabled(data.web !== false);
-        localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+    const fetchConfig = async () => {
+      try {
+        const res = await customFetch('/api/config/chatbot');
+        if (res.ok) {
+          const data = await res.json();
+          setIsWebChatbotEnabled(data.web !== false);
+          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+        }
+      } catch (err: any) {
+        console.warn("Advertencia al cargar chatbot config en FloatingChatbot:", err.message);
       }
-    }, (err) => {
-      console.warn("Suscripción de chatbot en FloatingChatbot limitada o sin conexión:", err.message);
-    });
-    return () => unsub();
+    };
+    fetchConfig();
+    const interval = setInterval(fetchConfig, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   // Maintain focus on chatbot input when loading finishes, or when messages or state changes

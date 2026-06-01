@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { dbClient, customFetch } from '../utils/api';
+import { customFetch } from '../utils/api';
 import { 
   Bot, 
   Send, 
@@ -217,25 +216,32 @@ export default function EmbeddedChatbotView() {
     }
   }, [activeSession?.messages]);
 
-  // Initial load with real-time config listener
+  // Initial load with configuration fetching
   useEffect(() => {
-    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setIsWebChatbotEnabled(data.web !== false);
-        localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
-        localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
-        localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+    const fetchConfig = async () => {
+      try {
+        const res = await customFetch('/api/config/chatbot');
+        if (res.ok) {
+          const data = await res.json();
+          setIsWebChatbotEnabled(data.web !== false);
+          localStorage.setItem('kioto_chatbot_web', String(data.web !== false));
+          localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
+          localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
+        }
+      } catch (err: any) {
+        console.warn("Advertencia al cargar chatbot config en EmbeddedChatbotView:", err.message);
       }
-    }, (err) => {
-      console.warn("Suscripción de chatbot en EmbeddedChatbotView limitada o sin conexión:", err.message);
-    });
+    };
+
+    fetchConfig();
+    const configInterval = setInterval(fetchConfig, 10000);
 
     loadOrCreateSession();
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 7000);
+
     return () => {
-      unsub();
+      clearInterval(configInterval);
       clearInterval(interval);
     };
   }, []);

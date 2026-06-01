@@ -34,8 +34,7 @@ import {
   Copy
 } from 'lucide-react';
 import { User as UserType, ServicioMecanico } from './types';
-import { doc, onSnapshot } from "firebase/firestore";
-import { dbClient, customFetch } from './utils/api';
+import { customFetch } from './utils/api';
 import AdminPanel from './components/AdminPanel';
 import AsesorForm from './components/AsesorForm';
 import ServiciosTaller from './components/ServiciosTaller';
@@ -71,11 +70,11 @@ export default function App() {
   const [directivesList, setDirectivesList] = useState<string[]>([]);
   const [savingDirectives, setSavingDirectives] = useState<boolean>(false);
 
-  // Load chatbot server configuration in real-time
-  useEffect(() => {
-    const unsub = onSnapshot(doc(dbClient, "config", "chatbot"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+  const fetchChatbotConfig = async () => {
+    try {
+      const res = await customFetch('/api/config/chatbot');
+      if (res.ok) {
+        const data = await res.json();
         setIsWebChatbotEnabled(data.web !== false);
         setIsWhatsAppChatbotEnabled(data.whatsapp !== false);
         setIsMessengerChatbotEnabled(data.messenger !== false);
@@ -91,10 +90,16 @@ export default function App() {
         localStorage.setItem('kioto_chatbot_whatsapp', String(data.whatsapp !== false));
         localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
       }
-    }, (err) => {
-      console.warn("Advertencia de cuota o suscripción en el chatbot: usando configuración local/localStorage fallback.", err.message);
-    });
-    return () => unsub();
+    } catch (err: any) {
+      console.warn("Advertencia al obtener configuración del chatbot:", err.message);
+    }
+  };
+
+  // Load chatbot server configuration initially and refresh
+  useEffect(() => {
+    fetchChatbotConfig();
+    const interval = setInterval(fetchChatbotConfig, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSaveDirectives = async () => {

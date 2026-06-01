@@ -1,18 +1,24 @@
-import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDocs as firestoreGetDocs, 
-  getDoc as firestoreGetDoc, 
-  setDoc as firestoreSetDoc, 
-  deleteDoc as firestoreDeleteDoc 
-} from "firebase/firestore";
+// Removed actual Firestore client-side connections to use clean LocalStorage simulator fallbacks
 import firebaseConfig from "../../firebase-applet-config.json";
 
-// Initialize Firebase Client
-const firebaseApp = initializeApp(firebaseConfig);
-export const dbClient = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+export const dbClient = { type: 'local_storage_dummy' };
+
+function collection(parent: any, colName: string) {
+  return { path: colName };
+}
+
+function doc(parent: any, ...paths: string[]) {
+  let col = "";
+  let id = "";
+  if (parent && parent.path) {
+    col = parent.path;
+    id = paths[0];
+  } else {
+    col = String(paths[0] || "");
+    id = String(paths[1] || "");
+  }
+  return { path: `${col}/${id}`, col, id };
+}
 
 const DEFAULT_USERS = [
   { id: "u-admin", username: "ejemplo@kioto.com", password: "qwerty1", role: "Admin", name: "Jorge Administrador", isFirstLogin: false, createdAt: new Date().toISOString() }
@@ -124,42 +130,29 @@ function deleteFallbackDoc(collectionName: string, docId: string) {
   saveFallbackCollection(collectionName, filtered);
 }
 
-// Intercepted Firestore getters/setters with LocalStorage fallbacks
+// Intercepted getters/setters with pure LocalStorage engine
 async function getDocs(colRef: any): Promise<any> {
   const path = colRef._path?.segments?.[0] || colRef.path || "";
+  let list: any[] = [];
   try {
-    const snap = await firestoreGetDocs(colRef);
-    // Backup to localStorage for fallback use
-    try {
-      const list = snap.docs.map((d: any) => d.data());
-      localStorage.setItem(`kioto_local_db_${path}`, JSON.stringify(list));
-    } catch (e) {}
-    return snap;
-  } catch (err) {
-    console.warn(`Firestore getDocs failed for ${path}, falling back to LocalStorage`, err);
-    // Get from local storage
-    let list: any[] = [];
-    try {
-      const raw = localStorage.getItem(`kioto_local_db_${path}`);
-      if (raw) {
-        list = JSON.parse(raw);
-      } else {
-        if (path === "users") list = [...DEFAULT_USERS];
-        else if (path === "servicios") list = [...INITIAL_SERVICIOS];
-      }
-    } catch (e) {}
-    
-    // Return a mock QuerySnapshot structure
-    return {
-      empty: list.length === 0,
-      size: list.length,
-      docs: list.map((item: any) => ({
-        id: item.id || `mock-id-${Math.random()}`,
-        data: () => item,
-        ref: { id: item.id }
-      }))
-    };
-  }
+    const raw = localStorage.getItem(`kioto_local_db_${path}`);
+    if (raw) {
+      list = JSON.parse(raw);
+    } else {
+      if (path === "users") list = [...DEFAULT_USERS];
+      else if (path === "servicios") list = [...INITIAL_SERVICIOS];
+    }
+  } catch (e) {}
+  
+  return {
+    empty: list.length === 0,
+    size: list.length,
+    docs: list.map((item: any) => ({
+      id: item.id || `mock-id-${Math.random()}`,
+      data: () => item,
+      ref: { id: item.id }
+    }))
+  };
 }
 
 async function getDoc(docRef: any): Promise<any> {
@@ -167,57 +160,45 @@ async function getDoc(docRef: any): Promise<any> {
   const colName = pathSegments[0];
   const docId = pathSegments[1];
   
+  let data: any = null;
   try {
-    const snap = await firestoreGetDoc(docRef);
-    if (snap.exists()) {
-      try {
-        localStorage.setItem(`kioto_local_db_${colName}_${docId}`, JSON.stringify(snap.data()));
-      } catch (e) {}
-    }
-    return snap;
-  } catch (err) {
-    console.warn(`Firestore getDoc failed for ${colName}/${docId}, falling back to LocalStorage`, err);
-    let data: any = null;
-    try {
-      const raw = localStorage.getItem(`kioto_local_db_${colName}_${docId}`);
-      if (raw) {
-        data = JSON.parse(raw);
+    const raw = localStorage.getItem(`kioto_local_db_${colName}_${docId}`);
+    if (raw) {
+      data = JSON.parse(raw);
+    } else {
+      if (colName === "config" && docId === "programming") {
+        data = {
+          maxServicesPerSlot: 2,
+          slotIntervalMinutes: 30,
+          openingTime: "08:00",
+          closingTime: "18:00",
+          toleranceMinutes: 15,
+          checklistItems: [
+            'Nivel de Aceite de Motor', 'Líquido de Dirección', 'Nivel de Anticongelante',
+            'Filtro de Aire', 'Líquido de Frenos', 'Filtro de Cabina', 'Batería (Voltaje/Terminales)',
+            'Bujías', 'Bandas de Motor', 'Mangueras', 'Rotación de llantas', 'Balatas Traseras',
+            'Suspensión (Bujes/Rótulas)', 'Fugas de Fluidos', 'Presión de Llantas', 'Alineación de llantas',
+            'Discos de Freno', 'Luces (Altas/Bajas/Stop)', 'Estado de Llantas (Desgaste)', 'Balatas Delanteras',
+            'Amortiguadores', 'Direcciones y Limpiaparabrisas'
+          ]
+        };
+      } else if (colName === "config" && docId === "chatbot") {
+        data = { web: true, whatsapp: true, messenger: true };
       } else {
-        if (colName === "config" && docId === "programming") {
-          data = {
-            maxServicesPerSlot: 2,
-            slotIntervalMinutes: 30,
-            openingTime: "08:00",
-            closingTime: "18:00",
-            toleranceMinutes: 15,
-            checklistItems: [
-              'Nivel de Aceite de Motor', 'Líquido de Dirección', 'Nivel de Anticongelante',
-              'Filtro de Aire', 'Líquido de Frenos', 'Filtro de Cabina', 'Batería (Voltaje/Terminales)',
-              'Bujías', 'Bandas de Motor', 'Mangueras', 'Rotación de llantas', 'Balatas Traseras',
-              'Suspensión (Bujes/Rótulas)', 'Fugas de Fluidos', 'Presión de Llantas', 'Alineación de llantas',
-              'Discos de Freno', 'Luces (Altas/Bajas/Stop)', 'Estado de Llantas (Desgaste)', 'Balatas Delanteras',
-              'Amortiguadores', 'Direcciones y Limpiaparabrisas'
-            ]
-          };
-        } else if (colName === "config" && docId === "chatbot") {
-          data = { web: true, whatsapp: true, messenger: true };
-        } else {
-          // Check collections lists
-          const listRaw = localStorage.getItem(`kioto_local_db_${colName}`);
-          if (listRaw) {
-            const list = JSON.parse(listRaw);
-            data = list.find((item: any) => item.id === docId) || null;
-          }
+        const listRaw = localStorage.getItem(`kioto_local_db_${colName}`);
+        if (listRaw) {
+          const list = JSON.parse(listRaw);
+          data = list.find((item: any) => item.id === docId) || null;
         }
       }
-    } catch (e) {}
-    
-    return {
-      exists: () => data !== null && data !== undefined,
-      data: () => data,
-      id: docId
-    };
-  }
+    }
+  } catch (e) {}
+  
+  return {
+    exists: () => data !== null && data !== undefined,
+    data: () => data,
+    id: docId
+  };
 }
 
 async function setDoc(docRef: any, data: any, options?: any): Promise<any> {
@@ -225,7 +206,6 @@ async function setDoc(docRef: any, data: any, options?: any): Promise<any> {
   const colName = pathSegments[0];
   const docId = pathSegments[1];
   
-  // Update local storage first
   try {
     if (colName === "config") {
       const prevailing = getFallbackDoc("config", docId) || {};
@@ -252,13 +232,7 @@ async function setDoc(docRef: any, data: any, options?: any): Promise<any> {
       localStorage.setItem(`kioto_local_db_${colName}`, JSON.stringify(list));
     }
   } catch (e) {}
-  
-  try {
-    return await firestoreSetDoc(docRef, data, options || {});
-  } catch (err) {
-    console.warn(`Firestore setDoc failed for ${colName}/${docId}, updated local storage only`, err);
-    return true;
-  }
+  return true;
 }
 
 async function deleteDoc(docRef: any): Promise<any> {
@@ -266,7 +240,6 @@ async function deleteDoc(docRef: any): Promise<any> {
   const colName = pathSegments[0];
   const docId = pathSegments[1];
   
-  // Update local storage
   try {
     if (colName === "config") {
       localStorage.removeItem(`kioto_local_db_config_${docId}`);
@@ -280,13 +253,7 @@ async function deleteDoc(docRef: any): Promise<any> {
       localStorage.setItem(`kioto_local_db_${colName}`, JSON.stringify(filtered));
     }
   } catch (e) {}
-  
-  try {
-    return await firestoreDeleteDoc(docRef);
-  } catch (err) {
-    console.warn(`Firestore deleteDoc failed for ${colName}/${docId}, updated local storage only`, err);
-    return true;
-  }
+  return true;
 }
 
 class MockResponse {
@@ -1589,44 +1556,43 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
 
   if (url.startsWith("/api/")) {
     const hostname = typeof window !== "undefined" ? window.location.hostname : "";
-    
-    // Check if the user has defined a remote backend URL (like Cloud Run) in Vercel's environment variables
+    const isLocalOrSandbox = hostname === "localhost" || hostname === "127.0.0.1" || hostname.includes("run.app");
+
+    // 1. If running in a local or sandbox environment, ALWAYS talk to the local Express backend relatively.
+    if (isLocalOrSandbox) {
+      try {
+        const res = await fetch(url, init);
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          console.warn(`API route ${url} returned HTML. Falling back to live client-side database simulation.`);
+          return executeClientRequest(url, init) as any;
+        }
+        return res;
+      } catch (err) {
+        console.warn("API Server unavailable. Falling back to live Frontend Firestore client:", err);
+        return executeClientRequest(url, init) as any;
+      }
+    }
+
+    // 2. If hosted externally (like on Vercel):
+    // Try to route requests to the remote backend (Cloud Run) if VITE_API_URL is defined.
     const viteApiUrl = (import.meta as any).env?.VITE_API_URL || "";
     if (viteApiUrl) {
       const cleanBase = viteApiUrl.endsWith("/") ? viteApiUrl.slice(0, -1) : viteApiUrl;
       try {
         const remoteRes = await fetch(cleanBase + url, init);
-        // If the server responded with actual API content, return it
         const contentType = remoteRes.headers.get("content-type") || "";
         if (!contentType.includes("text/html")) {
           return remoteRes;
         }
-        console.warn(`Remote server ${cleanBase} returned HTML for ${url}. Falling back to client-side simulator.`);
+        console.warn(`Remote server ${cleanBase} returned HTML for ${url}. Falling back to Firestore client-side simulator.`);
       } catch (err) {
         console.error(`Failed to reach remote server at ${cleanBase}:`, err);
       }
     }
 
-    const isLocalOrSandbox = hostname === "localhost" || hostname === "127.0.0.1" || hostname.includes("run.app");
-
-    // If hosted externally (like on Vercel), route directly to live Firestore client simulator
-    if (!isLocalOrSandbox) {
-      return executeClientRequest(url, init) as any;
-    }
-
-    // Otherwise, try standard fetch and fallback on failure or HTML responses
-    try {
-      const res = await fetch(url, init);
-      const contentType = res.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        console.warn(`API route ${url} returned HTML. Falling back to live client-side database simulation.`);
-        return executeClientRequest(url, init) as any;
-      }
-      return res;
-    } catch (err) {
-      console.warn("API Server unavailable. Falling back to live Frontend Firestore client:", err);
-      return executeClientRequest(url, init) as any;
-    }
+    // 3. Otherwise, fallback to the local Firestore client simulator
+    return executeClientRequest(url, init) as any;
   }
 
   return fetch(input, init);
