@@ -165,6 +165,27 @@ export default function EmbeddedChatbotView() {
           localStorage.setItem('kioto_chat_name', data.session.clientName);
         }
         await fetchNotifications();
+
+        if (data.resetChat) {
+          setTimeout(async () => {
+            try {
+              localStorage.removeItem('kioto_chat_phone');
+              localStorage.removeItem('kioto_chat_name');
+              const newPhone = 'cli-' + Math.random().toString(36).substring(2, 9);
+              localStorage.setItem('kioto_chat_phone', newPhone);
+              setClientPhone(newPhone);
+              setClientName('Invitado Taller');
+
+              const resetRes = await customFetch(`/api/chats/session?platform=chatbot&clientPhoneOrId=${encodeURIComponent(newPhone)}&clientName=Invitado%20Taller`);
+              const resetData = await resetRes.json();
+              if (resetData.success && resetData.session) {
+                setActiveSession(resetData.session);
+              }
+            } catch (err) {
+              console.error("Auto-reset error:", err);
+            }
+          }, 4000);
+        }
       }
     } catch (err) {
       console.error("Chat message send error:", err);
@@ -207,7 +228,7 @@ export default function EmbeddedChatbotView() {
         localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
       }
     }, (err) => {
-      console.error("Error subscribing to chatbot configs in embedded view:", err);
+      console.warn("Suscripción de chatbot en EmbeddedChatbotView limitada o sin conexión:", err.message);
     });
 
     loadOrCreateSession();

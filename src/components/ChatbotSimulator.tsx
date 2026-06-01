@@ -174,6 +174,16 @@ export default function ChatbotSimulator({ onAppointmentBooked }: ChatbotSimulat
           onAppointmentBooked();
         }
         await fetchNotifications();
+
+        if (data.resetChat) {
+          setTimeout(async () => {
+            try {
+              await checkAndLoadSession();
+            } catch (err) {
+              console.error("Auto-reset error simulator:", err);
+            }
+          }, 4000);
+        }
       }
     } catch (err) {
       console.error("Chat message send error:", err);

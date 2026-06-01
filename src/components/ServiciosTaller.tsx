@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { customFetch } from '../utils/api';
 import { 
   Wrench, 
@@ -17,10 +19,82 @@ import {
   Printer,
   X,
   Check,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 import { ServicioMecanico, User as UserType } from '../types';
 import KiotoLogo from './KiotoLogo';
+
+function formatFolio(id: string): string {
+  if (!id) return '';
+  if (id.startsWith('KSM-')) return id;
+  const num = id.replace(/^(serv-|cb-)/, '').replace(/[^0-9]/g, '');
+  if (num.length >= 6) {
+    return 'KSM-' + num.slice(-6);
+  }
+  return 'KSM-' + (id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase().padStart(6, '0'));
+}
+
+function MiniPdfIcon() {
+  return (
+    <div className="relative inline-flex items-center justify-center bg-white rounded border border-red-500 shadow-3xs font-sans select-none shrink-0" style={{ width: '18px', height: '22px' }}>
+      <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500" style={{ borderBottomLeftRadius: '2px' }} />
+      <span className="text-[6.5px] font-extrabold text-red-600 mt-1.5 scale-90" style={{ letterSpacing: '-0.5px' }}>PDF</span>
+    </div>
+  );
+}
+
+// Helper to extract all images for the service detail carousel
+function extractImagesFromService(service: ServicioMecanico | null) {
+  const list: { url: string; label: string; type: string }[] = [];
+  if (!service) return list;
+
+  // 1. Reception photos
+  if (service.recepcionFoto) {
+    let photos: string[] = [];
+    if (service.recepcionFoto.startsWith('[')) {
+      try {
+        photos = JSON.parse(service.recepcionFoto);
+      } catch (e) {
+        photos = [service.recepcionFoto];
+      }
+    } else {
+      photos = [service.recepcionFoto];
+    }
+    
+    photos.forEach((url, i) => {
+      if (url) {
+        list.push({
+          url,
+          label: `Foto de Recepción #${i + 1}`,
+          type: 'Foto de Recepción'
+        });
+      }
+    });
+  }
+  
+  // 2. ID Photo Front
+  if (service.deliveryFotoIdFront) {
+    list.push({
+      url: service.deliveryFotoIdFront,
+      label: 'Identificación Oficial - Frente',
+      type: 'Identificación Frente'
+    });
+  }
+  
+  // 3. ID Photo Back
+  if (service.deliveryFotoIdBack) {
+    list.push({
+      url: service.deliveryFotoIdBack,
+      label: 'Identificación Oficial - Reverso',
+      type: 'Identificación Reverso'
+    });
+  }
+  
+  return list;
+}
 
 // Helper to auto-crop the ID card image based on predicted coordinates
 function cropBase64Image(base64Str: string, cropBox: { ymin: number; xmin: number; ymax: number; xmax: number }): Promise<string> {
@@ -230,9 +304,11 @@ interface CameraCaptureProps {
   savedImage?: string;
   hideUpload?: boolean;
   fluidMulti?: boolean;
+  forceHorizontal?: boolean;
+  badgeLabel?: string;
 }
 
-function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }: CameraCaptureProps) {
+function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti, forceHorizontal, badgeLabel }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -242,9 +318,12 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }:
   const startStreaming = async () => {
     setCameraError('');
     try {
-      const activeStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
+      const constraints: MediaStreamConstraints = {
+        video: forceHorizontal 
+          ? { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: 'environment' }
+      };
+      const activeStream = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(activeStream);
       setIsCameraActive(true);
     } catch (err) {
@@ -282,11 +361,97 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }:
     const video = videoRef.current;
     if (!video) return;
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Check if portrait stream is active
+    const isPortrait = (video.videoHeight || 0) > (video.videoWidth || 0);
+
+    if (isPortrait && forceHorizontal) {
+      // Rotate 90 degrees clockwise to pivot vertical capture to horizontal
+      canvas.width = video.videoHeight || 640;
+      canvas.height = video.videoWidth || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(90 * Math.PI / 180);
+      ctx.drawImage(video, -video.videoWidth / 2, -video.videoHeight / 2, video.videoWidth, video.videoHeight);
+    } else {
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    
+    // Auto-crop EXACTLY to the dotted/dashed guideline rectangle displayed visually
+    if (forceHorizontal) {
+      const displayWidth = video.clientWidth || 1;
+      const displayHeight = video.clientHeight || 1;
+      const rawWidth = canvas.width;
+      const rawHeight = canvas.height;
+
+      const displayAspect = displayWidth / displayHeight;
+      const videoAspect = rawWidth / rawHeight;
+
+      let scale = 1;
+      let offsetLeft = 0;
+      let offsetTop = 0;
+
+      // Handle CSS object-cover scaling behavior
+      if (videoAspect > displayAspect) {
+        // Video is wider than the container (sides are clipped off visually)
+        scale = rawHeight / displayHeight;
+        offsetLeft = (rawWidth - displayWidth * scale) / 2;
+        offsetTop = 0;
+      } else {
+        // Video is taller/narrower than the container (top/bottom are clipped off visually)
+        scale = rawWidth / displayWidth;
+        offsetLeft = 0;
+        offsetTop = (rawHeight - displayHeight * scale) / 2;
+      }
+
+      // Compute visual guideline box coordinates inside the display container (CSS pixels)
+      let boxW = displayWidth * 0.82;
+      if (boxW > 390) {
+        boxW = 390;
+      }
+      const boxH = boxW / 1.58;
+
+      const boxX = (displayWidth - boxW) / 2;
+      const boxY = (displayHeight - boxH) / 2;
+
+      // Map display-space layout coordinates to high-res raw canvas coordinates
+      let cropX = Math.round(boxX * scale + offsetLeft);
+      let cropY = Math.round(boxY * scale + offsetTop);
+      let cropWidth = Math.round(boxW * scale);
+      let cropHeight = Math.round(boxH * scale);
+
+      // Ensure mapping boundaries remain within high-res canvas safety limits
+      if (cropX < 0) cropX = 0;
+      if (cropY < 0) cropY = 0;
+      if (cropX + cropWidth > rawWidth) {
+        cropWidth = rawWidth - cropX;
+      }
+      if (cropY + cropHeight > rawHeight) {
+        cropHeight = rawHeight - cropY;
+      }
+
+      // Execute precise crop
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = cropWidth;
+      cropCanvas.height = cropHeight;
+      const cropCtx = cropCanvas.getContext('2d');
+      if (cropCtx) {
+        cropCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+        canvas.width = cropWidth;
+        canvas.height = cropHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, cropWidth, cropHeight);
+          ctx.drawImage(cropCanvas, 0, 0);
+        }
+      }
+    }
+    
     const b64 = canvas.toDataURL('image/jpeg', 0.85);
     
     if (fluidMulti) {
@@ -337,19 +502,28 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }:
       </div>
 
       {hasLocalPreview && (
-        <div className="relative border border-gray-300 bg-neutral-900 rounded-xl overflow-hidden min-h-[260px] md:min-h-[360px] flex items-center justify-center shadow-md animate-fade-in">
-          <img src={preview!} alt="Vista previa" className="max-h-[380px] md:max-h-[500px] w-full object-contain text-[10px] text-white italic" referrerPolicy="no-referrer" />
-          <button
-            type="button"
-            onClick={() => {
-              setPreview(null);
-              onCapture('');
-            }}
-            className="absolute top-3 right-3 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-2 cursor-pointer transition-colors shadow-lg z-10 hover:scale-105 active:scale-95 duration-100"
-            title="Eliminar foto"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        <div className="flex justify-center py-2">
+          <div className="relative border border-neutral-900 bg-[#0b0b0c] p-1.5 rounded-2xl shadow-xl aspect-[1.58] w-full max-w-[340px] flex items-center justify-center overflow-visible animate-fade-in group">
+            <img src={preview!} alt="Vista previa" className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" />
+            
+            {badgeLabel && (
+              <div className="absolute -top-3 right-4 bg-white border border-gray-250 shadow-md font-sans text-[10px] font-black text-black tracking-wider px-3 py-1 rounded-lg uppercase select-none z-10 transition-transform group-hover:scale-105">
+                {badgeLabel}
+              </div>
+            )}
+            
+            <button
+              type="button"
+              onClick={() => {
+                setPreview(null);
+                onCapture('');
+              }}
+              className="absolute bottom-3 left-3 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-2 cursor-pointer transition-colors shadow-lg z-10 hover:scale-105 active:scale-95 duration-100 opacity-80 group-hover:opacity-100"
+              title="Eliminar foto"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -380,7 +554,21 @@ function CameraCapture({ label, onCapture, savedImage, hideUpload, fluidMulti }:
         <div className="space-y-3 animate-fade-in">
           <div className="relative bg-black rounded-xl overflow-hidden aspect-[4/3] w-full min-h-[300px] md:min-h-[440px] shadow-inner flex items-center justify-center border border-slate-350">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-white/20 m-4 rounded-lg"></div>
+            {forceHorizontal ? (
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center overflow-hidden">
+                {/* Visual guideline cut-out */}
+                <div className="w-[82%] max-w-[390px] aspect-[1.58] border-4 border-dashed border-emerald-400 rounded-2xl flex items-center justify-center shadow-[0_0_0_9999px_rgba(0,0,0,0.50)] animate-pulse">
+                  <span className="text-[9px] text-emerald-300 font-extrabold uppercase tracking-widest bg-slate-950/80 px-2.5 py-1 rounded leading-none select-none">
+                    ALINEE ID AQUÍ
+                  </span>
+                </div>
+                <p className="text-[10px] text-white font-bold tracking-wide bg-slate-900/90 px-3 py-1 rounded-full mt-4 select-none">
+                  Sostenga la credencial horizontalmente
+                </p>
+              </div>
+            ) : (
+              <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-white/20 m-4 rounded-lg"></div>
+            )}
           </div>
           <div className="flex gap-3">
             <button
@@ -414,6 +602,8 @@ interface ServiciosTallerProps {
 }
 
 export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }: ServiciosTallerProps) {
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+
   // Manual high-level creation form fields
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -422,6 +612,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   const [plate, setPlate] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [appointmentDate, setAppointmentDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -511,6 +703,425 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
   // Core printable viewer parameters
   const [printService, setPrintService] = useState<ServicioMecanico | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfRowDownloadingId, setPdfRowDownloadingId] = useState<string | null>(null);
+
+  const generateCanvasWithOklchFix = async (element: HTMLElement): Promise<HTMLCanvasElement> => {
+    const originalGetComputedStyle = window.getComputedStyle;
+    const canvasHelper = document.createElement('canvas');
+
+    const convertOklchToRgb = (val: string): string => {
+      if (!val || typeof val !== 'string') return val;
+      if (!val.includes('oklch(') && !val.includes('oklab(')) return val;
+
+      let processed = val;
+
+      // Convert oklch
+      if (processed.includes('oklch(')) {
+        processed = processed.replace(/oklch\s*\(([^)]+)\)/g, (match, content) => {
+          try {
+            const parts = content.trim().split(/[\s,/]+/);
+            if (parts.length >= 3) {
+              let l = parseFloat(parts[0]);
+              let c = parseFloat(parts[1]);
+              let h = parseFloat(parts[2]);
+              let a = parts[3] ? parseFloat(parts[3]) : 1;
+
+              if (parts[0].includes('%')) l = parseFloat(parts[0]) / 100;
+              if (parts[3] && parts[3].includes('%')) a = parseFloat(parts[3]) / 100;
+
+              const L = l;
+              const hRad = (h * Math.PI) / 180;
+              const a_ = c * Math.cos(hRad);
+              const b_ = c * Math.sin(hRad);
+
+              const l_ = L + 0.3963377774 * a_ + 0.2158017574 * b_;
+              const m_ = L - 0.1055613458 * a_ - 0.0638541728 * b_;
+              const s_ = L - 0.0894841775 * a_ - 1.291485548 * b_;
+
+              const l3 = l_ * l_ * l_;
+              const m3 = m_ * m_ * m_;
+              const s3 = s_ * s_ * s_;
+
+              const r_ = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+              const g_ = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+              const b_rgb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+              const r = r_ <= 0.0031308 ? 12.92 * r_ : 1.055 * Math.pow(r_, 1 / 2.4) - 0.055;
+              const g = g_ <= 0.0031308 ? 12.92 * g_ : 1.055 * Math.pow(g_, 1 / 2.4) - 0.055;
+              const b = b_rgb <= 0.0031308 ? 12.92 * b_rgb : 1.055 * Math.pow(b_rgb, 1 / 2.4) - 0.055;
+
+              const r255 = Math.min(255, Math.max(0, Math.round(r * 255)));
+              const g255 = Math.min(255, Math.max(0, Math.round(g * 255)));
+              const b255 = Math.min(255, Math.max(0, Math.round(b * 255)));
+
+              if (a < 1) {
+                return `rgba(${r255}, ${g255}, ${b255}, ${a})`;
+              } else {
+                return `rgb(${r255}, ${g255}, ${b255})`;
+              }
+            }
+          } catch (e) {
+            console.warn("Error converting OKLCH", e);
+          }
+
+          if (content.includes('0.627') || content.includes('149')) return '#10b981';
+          if (content.includes('0.145') || content.includes('0.005')) return '#18181b';
+          return '#6b7280';
+        });
+      }
+
+      // Convert oklab
+      if (processed.includes('oklab(')) {
+        processed = processed.replace(/oklab\s*\(([^)]+)\)/g, (match, content) => {
+          try {
+            const parts = content.trim().split(/[\s,/]+/);
+            if (parts.length >= 3) {
+              let l = parseFloat(parts[0]);
+              let a_ = parseFloat(parts[1]);
+              let b_ = parseFloat(parts[2]);
+              let a = parts[3] ? parseFloat(parts[3]) : 1;
+
+              if (parts[0].includes('%')) l = parseFloat(parts[0]) / 100;
+              if (parts[3] && parts[3].includes('%')) a = parseFloat(parts[3]) / 100;
+
+              const L = l;
+              const l_ = L + 0.3963377774 * a_ + 0.2158017574 * b_;
+              const m_ = L - 0.1055613458 * a_ - 0.0638541728 * b_;
+              const s_ = L - 0.0894841775 * a_ - 1.291485548 * b_;
+
+              const l3 = l_ * l_ * l_;
+              const m3 = m_ * m_ * m_;
+              const s3 = s_ * s_ * s_;
+
+              const r_ = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+              const g_ = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+              const b_rgb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+              const r = r_ <= 0.0031308 ? 12.92 * r_ : 1.055 * Math.pow(r_, 1 / 2.4) - 0.055;
+              const g = g_ <= 0.0031308 ? 12.92 * g_ : 1.055 * Math.pow(g_, 1 / 2.4) - 0.055;
+              const b = b_rgb <= 0.0031308 ? 12.92 * b_rgb : 1.055 * Math.pow(b_rgb, 1 / 2.4) - 0.055;
+
+              const r255 = Math.min(255, Math.max(0, Math.round(r * 255)));
+              const g255 = Math.min(255, Math.max(0, Math.round(g * 255)));
+              const b255 = Math.min(255, Math.max(0, Math.round(b * 255)));
+
+              if (a < 1) {
+                return `rgba(${r255}, ${g255}, ${b255}, ${a})`;
+              } else {
+                return `rgb(${r255}, ${g255}, ${b255})`;
+              }
+            }
+          } catch (e) {
+            console.warn("Error converting OKLAB", e);
+          }
+          return '#6b7280';
+        });
+      }
+
+      return processed;
+    };
+
+    const createStyleProxy = (style: CSSStyleDeclaration) => {
+      return new Proxy(style, {
+        get(target, prop) {
+          if (prop === 'getPropertyValue') {
+            return function(propertyName: string) {
+              return convertOklchToRgb(target.getPropertyValue(propertyName));
+            };
+          }
+          try {
+            if (typeof prop === 'string') {
+              const val = (target as any)[prop];
+              if (typeof val === 'string') {
+                return convertOklchToRgb(val);
+              }
+              if (typeof val === 'function') {
+                return val.bind(target);
+              }
+              return val;
+            }
+          } catch (e) {}
+          return Reflect.get(target, prop);
+        }
+      });
+    };
+
+    // Override main window's getComputedStyle
+    window.getComputedStyle = function(elt, pseudoElt) {
+      const style = originalGetComputedStyle.call(window, elt, pseudoElt);
+      return createStyleProxy(style);
+    } as any;
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        onclone: (clonedDoc) => {
+          // Override iframe view's getComputedStyle
+          if (clonedDoc.defaultView) {
+            const defaultViewObj = clonedDoc.defaultView;
+            const originalIframeGetComputedStyle = defaultViewObj.getComputedStyle;
+            defaultViewObj.getComputedStyle = function(elt, pseudoElt) {
+              const style = originalIframeGetComputedStyle.call(defaultViewObj, elt, pseudoElt);
+              return createStyleProxy(style);
+            } as any;
+          }
+
+          // Walk cloned DOM inline styles to cleanse oklch and oklab references
+          try {
+            const elements = clonedDoc.getElementsByTagName('*');
+            for (let i = 0; i < elements.length; i++) {
+              const el = elements[i] as HTMLElement;
+              if (el && el.style) {
+                for (let k = 0; k < el.style.length; k++) {
+                  const propName = el.style[k];
+                  const val = el.style.getPropertyValue(propName);
+                  if (val && (val.includes('oklch') || val.includes('oklab'))) {
+                    el.style.setProperty(propName, convertOklchToRgb(val));
+                  }
+                }
+                const bg = el.style.backgroundColor;
+                if (bg && (bg.includes('oklch') || bg.includes('oklab'))) {
+                  el.style.backgroundColor = convertOklchToRgb(bg);
+                }
+                const cl = el.style.color;
+                if (cl && (cl.includes('oklch') || cl.includes('oklab'))) {
+                  el.style.color = convertOklchToRgb(cl);
+                }
+                const bdr = el.style.borderColor;
+                if (bdr && (bdr.includes('oklch') || bdr.includes('oklab'))) {
+                  el.style.borderColor = convertOklchToRgb(bdr);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Manual inline oklch/oklab replacement failed", e);
+          }
+
+          // Walk all style tags and replace custom css variables or rules containing oklch or oklab
+          try {
+            const styleTags = clonedDoc.getElementsByTagName('style');
+            for (let i = 0; i < styleTags.length; i++) {
+              const tag = styleTags[i];
+              if (tag.innerHTML && (tag.innerHTML.includes('oklch') || tag.innerHTML.includes('oklab'))) {
+                tag.innerHTML = tag.innerHTML.replace(/(oklch|oklab)\s*\(([^)]+)\)/g, (match) => {
+                  return convertOklchToRgb(match);
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Regex replacement in style tags failed", e);
+          }
+
+          // Deep parse Samedomain Stylesheet CSS Rules for oklch + oklab values
+          try {
+            const cleanseRule = (rule: CSSRule) => {
+              try {
+                if (rule instanceof CSSStyleRule) {
+                  const style = rule.style;
+                  for (let i = 0; i < style.length; i++) {
+                    const prop = style[i];
+                    const val = style.getPropertyValue(prop);
+                    if (val && (val.includes('oklch') || val.includes('oklab'))) {
+                      style.setProperty(prop, convertOklchToRgb(val));
+                    }
+                  }
+                } else if (rule instanceof CSSGroupingRule) {
+                  const subRules = (rule as any).cssRules || (rule as any).rules;
+                  if (subRules) {
+                    for (let j = 0; j < subRules.length; j++) {
+                      cleanseRule(subRules[j]);
+                    }
+                  }
+                }
+              } catch (e) {}
+            };
+
+            const sheets = clonedDoc.styleSheets;
+            for (let i = 0; i < sheets.length; i++) {
+              const sheet = sheets[i];
+              try {
+                const rules = (sheet as any).cssRules || (sheet as any).rules;
+                if (rules) {
+                  for (let j = 0; j < rules.length; j++) {
+                    cleanseRule(rules[j]);
+                  }
+                }
+              } catch (e) {}
+            }
+          } catch (e) {}
+
+          // Auto-spacer logic to respect print-block-avoid page breaks in html2canvas PDF rendering
+          try {
+            const printableSheet = clonedDoc.getElementById('printable-service-sheet');
+            if (printableSheet) {
+              const sheetWidth = printableSheet.offsetWidth || 800; // fallback standard width
+              const pageHeightPx = sheetWidth * 1.4142857; // A4 aspect ratio 297/210
+
+              const breakBlocks = clonedDoc.querySelectorAll('.print-block-avoid');
+              breakBlocks.forEach((block: any) => {
+                let offsetTop = 0;
+                let current = block;
+                while (current && current !== printableSheet) {
+                  offsetTop += current.offsetTop;
+                  current = current.offsetParent;
+                }
+
+                const blockHeight = block.offsetHeight || 0;
+                const startPage = Math.floor(offsetTop / pageHeightPx);
+                const endPage = Math.floor((offsetTop + blockHeight) / pageHeightPx);
+
+                // If the block spans across a page boundary Y position
+                if (startPage !== endPage) {
+                  const spacerHeight = ((startPage + 1) * pageHeightPx) - offsetTop;
+                  if (spacerHeight > 0 && spacerHeight < pageHeightPx) {
+                    const spacer = clonedDoc.createElement('div');
+                    spacer.style.height = `${spacerHeight}px`;
+                    spacer.style.width = '100%';
+                    spacer.style.backgroundColor = '#ffffff';
+                    block.parentNode?.insertBefore(spacer, block);
+                  }
+                }
+              });
+            }
+          } catch (e) {
+            console.warn("Error running auto-spacer page break calculation", e);
+          }
+        }
+      });
+      return canvas;
+    } finally {
+      // Restore original getComputedStyle
+      window.getComputedStyle = originalGetComputedStyle;
+    }
+  };
+
+  const handleDownloadPdfForService = async (service: ServicioMecanico) => {
+    if (isGeneratingPdf || pdfRowDownloadingId) return;
+    setPdfRowDownloadingId(service.id);
+    setIsGeneratingPdf(true);
+    setPrintService(service);
+    
+    setTimeout(async () => {
+      try {
+        const element = document.getElementById('printable-service-sheet');
+        if (!element) {
+          throw new Error("Element #printable-service-sheet not found");
+        }
+
+        const canvas = await generateCanvasWithOklchFix(element);
+
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 210; // width of A4 in mm
+        const pageHeight = 297; // height of A4 in mm
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pageHeight;
+
+        let additionalPages = 0;
+        while (heightLeft > 0 && additionalPages < 1) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+          heightLeft -= pageHeight;
+          additionalPages++;
+        }
+
+        const folio = formatFolio(service.id);
+        const sanitizedVehicle = service.vehicle.replace(/[^a-zA-Z0-9]/g, '_');
+        pdf.save(`Reporte_Servicio_${folio}_${sanitizedVehicle}.pdf`);
+      } catch (error) {
+        console.error("Error generating PDF:", error);
+        alert("No se pudo generar el archivo PDF de forma directa. Por favor intente imprimir como PDF.");
+      } finally {
+        setIsGeneratingPdf(false);
+        setPdfRowDownloadingId(null);
+        setPrintService(null);
+      }
+    }, 1200);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!printService) return;
+    setIsGeneratingPdf(true);
+    try {
+      const element = document.getElementById('printable-service-sheet');
+      if (!element) {
+        throw new Error("Element #printable-service-sheet not found");
+      }
+
+      // Generate a canvas representation of the DOM elements with oklch fix
+      const canvas = await generateCanvasWithOklchFix(element);
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210; // width of A4 in mm
+      const pageHeight = 297; // height of A4 in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pageHeight;
+
+      let additionalPages = 0;
+      while (heightLeft > 0 && additionalPages < 1) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pageHeight;
+        additionalPages++;
+      }
+
+      const folio = formatFolio(printService.id);
+      const sanitizedVehicle = printService.vehicle.replace(/[^a-zA-Z0-9]/g, '_');
+      pdf.save(`Reporte_Servicio_${folio}_${sanitizedVehicle}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("No se pudo generar el archivo PDF de forma directa. Por favor intente imprimir como PDF.");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Service detail popup with image carousel
+  const [detailService, setDetailService] = useState<ServicioMecanico | null>(null);
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
+
+  // Keyboard navigation for carousel images
+  useEffect(() => {
+    if (!detailService) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const imgs = extractImagesFromService(detailService);
+      if (imgs.length === 0) return;
+      
+      if (e.key === 'ArrowLeft') {
+        setActiveCarouselIndex((prev) => (prev - 1 + imgs.length) % imgs.length);
+      } else if (e.key === 'ArrowRight') {
+        setActiveCarouselIndex((prev) => (prev + 1) % imgs.length);
+      } else if (e.key === 'Escape') {
+        setDetailService(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [detailService]);
 
   const [progConfig, setProgConfig] = useState<{
     maxServicesPerSlot: number;
@@ -533,6 +1144,75 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       })
       .catch(err => console.error("Error loading prog parameters:", err));
   }, [services]);
+
+  // Helper to generate basic slots based on workshop opening hours
+  const generateBasicSlots = (openT = '08:00', closeT = '18:00', intervalMin = 30): string[] => {
+    const slots: string[] = [];
+    const openParts = (openT || '08:00').split(':').map(Number);
+    const closeParts = (closeT || '18:00').split(':').map(Number);
+    const startHour = isNaN(openParts[0]) ? 8 : openParts[0];
+    const startMin = isNaN(openParts[1]) ? 0 : openParts[1];
+    const endHour = isNaN(closeParts[0]) ? 18 : closeParts[0];
+    const endMin = isNaN(closeParts[1]) ? 0 : closeParts[1];
+    
+    const startTotalMinutes = startHour * 60 + startMin;
+    const endTotalMinutes = endHour * 65 ? endHour * 60 + endMin : endHour * 60 + endMin;
+    const step = intervalMin <= 0 ? 30 : intervalMin;
+    for (let m = startTotalMinutes; m < endTotalMinutes; m += step) {
+      const hh = String(Math.floor(m / 60)).padStart(2, '0');
+      const mm = String(m % 60).padStart(2, '0');
+      slots.push(`${hh}:${mm}`);
+    }
+    return slots;
+  };
+
+  const getClientAvailableSlots = (dateStr: string): string[] => {
+    const openT = progConfig?.openingTime || '08:00';
+    const closeT = progConfig?.closingTime || '18:00';
+    const intervalMin = progConfig?.slotIntervalMinutes || 30;
+    const maxServices = progConfig?.maxServicesPerSlot || 2;
+
+    const basicSlots = generateBasicSlots(openT, closeT, intervalMin);
+
+    const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+    const localToday = new Date(new Date().getTime() + offsetMs);
+    const currentTodayStr = localToday.toISOString().slice(0, 10);
+
+    return basicSlots.filter(s => {
+      const slotDateTime = `${dateStr}T${s}`;
+      const count = services.filter((serv: any) => {
+        if (serv.appointmentDate !== slotDateTime) return false;
+        const lowerStatus = (serv.status || "").toLowerCase();
+        return lowerStatus !== "cancelado" && lowerStatus !== "cancelada" && lowerStatus !== "entregado" && lowerStatus !== "entregada";
+      }).length;
+      if (count >= maxServices) return false;
+
+      // Filter past slots if selecting today's date
+      if (dateStr === currentTodayStr) {
+        const [sh, sm] = s.split(':').map(Number);
+        const slotTotalMinutes = sh * 60 + sm;
+
+        const currentHour = localToday.getUTCHours();
+        const currentMin = localToday.getUTCMinutes();
+        const currentTotalMinutes = currentHour * 60 + currentMin;
+
+        // Give a 5-minute threshold for same-day manual reception desk bookings
+        if (slotTotalMinutes < currentTotalMinutes + 5) {
+          return false;
+        }
+      }
+      return true;
+    });
+  };
+
+  // Synchronize appointmentDate with selectedDate & selectedTime for creation
+  useEffect(() => {
+    if (selectedDate && selectedTime) {
+      setAppointmentDate(`${selectedDate}T${selectedTime}`);
+    } else {
+      setAppointmentDate('');
+    }
+  }, [selectedDate, selectedTime]);
 
   // Synchronize modal state inputs with the focused service files on launch
   useEffect(() => {
@@ -663,6 +1343,8 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         setPlate('');
         setServiceType('');
         setAppointmentDate('');
+        setSelectedDate('');
+        setSelectedTime('');
         onServiceUpdated();
         setTimeout(() => setSuccessMsg(''), 4000);
       } else {
@@ -897,6 +1579,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
   };
 
   const handleDeleteService = async (id: string) => {
+    if (!isAdmin) {
+      alert("No tienes permisos de administrador para eliminar registros.");
+      return;
+    }
     if (deleteConfirmId !== id) {
       setDeleteConfirmId(id);
       setTimeout(() => {
@@ -976,7 +1662,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       }
 
       return [
-        `#${(s.id || '').replace('serv-', '').slice(-4).toUpperCase()}`,
+        formatFolio(s.id || ''),
         s.clientName || '',
         s.clientPhone ? `\t${s.clientPhone}` : '',
         s.vehicle || '',
@@ -1047,7 +1733,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Form: Manual Booking */}
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-3">
           <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4 shadow-xs">
             <div 
               onClick={() => setIsCreateFormExpanded(!isCreateFormExpanded)} 
@@ -1147,15 +1833,67 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1 select-none">Fecha Programada</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={appointmentDate}
-                    onChange={(e) => setAppointmentDate(e.target.value)}
-                    className="w-full bg-white border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none cursor-pointer"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5 select-none text-left">📅 Fecha de Cita</label>
+                    <select
+                      required
+                      value={selectedDate}
+                      onChange={(e) => {
+                        setSelectedDate(e.target.value);
+                        setSelectedTime('');
+                      }}
+                      className="w-full bg-white border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Seleccionar Fecha --</option>
+                      {(() => {
+                        const offsetMs = -6 * 60 * 60 * 1000; // Mexico Central Time (UTC-6)
+                        const localToday = new Date(new Date().getTime() + offsetMs);
+                        const upcomingWeeks: { dateStr: string; label: string; isFull: boolean }[] = [];
+                        
+                        for (let i = 0; i < 30; i++) {
+                          const d = new Date(localToday.getTime() + i * 24 * 60 * 60 * 1000);
+                          const dateStr = d.toISOString().slice(0, 10);
+                          
+                          // Check if full
+                          const available = getClientAvailableSlots(dateStr);
+                          const isFull = available.length === 0;
+
+                          const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+                          const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                          const dayLabel = daysOfWeek[d.getUTCDay()];
+                          const monthLabel = months[d.getUTCMonth()];
+                          const label = `${dayLabel}, ${d.getUTCDate()} de ${monthLabel}`;
+
+                          upcomingWeeks.push({ dateStr, label, isFull });
+                        }
+
+                        return upcomingWeeks.map((item) => (
+                          <option key={item.dateStr} value={item.dateStr} disabled={item.isFull}>
+                            {item.label} {item.isFull ? '🔴 (Cupo Lleno)' : '🟢 (Disponible)'}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5 select-none text-left">⏱️ Hora de Cita</label>
+                    <select
+                      required
+                      disabled={!selectedDate}
+                      value={selectedTime}
+                      onChange={(e) => setSelectedTime(e.target.value)}
+                      className="w-full bg-white disabled:bg-gray-50 disabled:text-gray-400 border border-gray-250 text-gray-950 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-neutral-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">{selectedDate ? '-- Seleccionar Hora --' : 'Elija fecha primero'}</option>
+                      {selectedDate && getClientAvailableSlots(selectedDate).map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <button
@@ -1172,7 +1910,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         </div>
 
         {/* Right Table: Mechanical Services List */}
-        <div className="lg:col-span-8">
+        <div className="lg:col-span-9">
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <div>
@@ -1262,7 +2000,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                     </tr>
                   ) : (
                     filteredServices.map((service) => {
-                      const simpleFolio = service.id.replace('serv-', '').slice(-4).toUpperCase();
+                      const simpleFolio = formatFolio(service.id);
                       const dateObj = new Date(service.appointmentDate);
                       const formattedDate = isNaN(dateObj.getTime())
                         ? service.appointmentDate.replace('T', ' ')
@@ -1271,9 +2009,10 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                       return (
                         <tr 
                           key={service.id}
-                          className={`hover:bg-slate-50/40 transition-colors ${selectedIds.has(service.id) ? 'bg-indigo-50/20' : ''}`}
+                          className={`hover:bg-slate-50 transition-colors cursor-pointer group ${selectedIds.has(service.id) ? 'bg-indigo-50/25 hover:bg-indigo-100/30' : ''}`}
+                          onClick={() => { setDetailService(service); setActiveCarouselIndex(0); }}
                         >
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={selectedIds.has(service.id)}
@@ -1285,9 +2024,9 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           <td className="py-3.5 px-2.5">
                             <div className="flex items-center space-x-2">
                               <span className="font-mono text-[10px] text-zinc-650 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60 font-black">
-                                #{simpleFolio}
+                                {simpleFolio}
                               </span>
-                              <span className="font-bold text-gray-950">{service.vehicle}</span>
+                              <span className="font-bold text-gray-950 group-hover:text-indigo-650 transition-colors">{service.vehicle}</span>
                             </div>
                             <div className="text-[10px] mt-1 text-gray-400 font-mono">
                               Placa: <strong className="text-gray-700">{service.plate}</strong>
@@ -1297,7 +2036,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                           </td>
 
                           <td className="py-3.5 px-2.5">
-                            <div className="font-bold text-gray-900">{service.serviceType}</div>
+                            <div className="font-bold text-gray-900 group-hover:text-indigo-605 transition-colors">{service.serviceType}</div>
                             <div className="text-[10px] text-gray-400 mt-0.5 font-mono">{service.clientName} ({service.clientPhone})</div>
                           </td>
 
@@ -1343,7 +2082,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                             })()}
                           </td>
 
-                          <td className="py-3.5 px-2.5">
+                          <td className="py-3.5 px-2.5" onClick={(e) => e.stopPropagation()}>
                             {(() => {
                               const getOptionDisabled = (opt: string) => {
                                 if (opt === service.status) return false;
@@ -1383,8 +2122,38 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                             })()}
                           </td>
 
-                          <td className="py-3.5 px-2.5 text-right whitespace-nowrap">
+                          <td className="py-3.5 px-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                             <div className="inline-flex items-center gap-2">
+                              {/* PDF DOWNLOAD BUTTON */}
+                              <button
+                                onClick={() => {
+                                  if (service.status === 'entregado') {
+                                    handleDownloadPdfForService(service);
+                                  }
+                                }}
+                                disabled={service.status !== 'entregado' || pdfRowDownloadingId !== null}
+                                className={`p-1.5 px-2.5 rounded-lg inline-flex items-center space-x-1.5 font-bold text-[10px] uppercase transition-all select-none ${
+                                  service.status === 'entregado'
+                                    ? pdfRowDownloadingId === service.id
+                                      ? "bg-emerald-700 text-white cursor-wait"
+                                      : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-2xs"
+                                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 opacity-60"
+                                }`}
+                                title={service.status === 'entregado' ? "Descargar Reporte PDF" : "Disponible únicamente cuando el servicio esté entregado"}
+                              >
+                                {pdfRowDownloadingId === service.id ? (
+                                  <>
+                                    <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-0.5" />
+                                    <span>Espere...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download className="w-3.5 h-3.5 text-emerald-100" />
+                                    <MiniPdfIcon />
+                                  </>
+                                )}
+                              </button>
+
                               {/* PRINT REPORT BUTTON */}
                               <button
                                 onClick={() => {
@@ -1393,27 +2162,28 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                                   }
                                 }}
                                 disabled={service.status !== 'entregado'}
-                                className={`p-1 px-2.5 rounded-md inline-flex items-center space-x-1 font-bold text-[10px] uppercase transition-all select-none ${
+                                className={`p-2 rounded-lg inline-flex items-center justify-center transition-all select-none ${
                                   service.status === 'entregado'
                                     ? "bg-slate-900 hover:bg-slate-800 text-white cursor-pointer shadow-2xs"
-                                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 opacity-60"
                                 }`}
-                                title={service.status === 'entregado' ? "Imprimir Reporte Técnico" : "Disponible únicamente cuando el servicio esté entregado"}
+                                title={service.status === 'entregado' ? "Ver Reporte Técnico (Visualizar)" : "Disponible únicamente cuando el servicio esté entregado"}
                               >
-                                <Printer className="w-3.5 h-3.5" />
-                                <span>Imprimir</span>
+                                <Eye className="w-4 h-4 text-indigo-300" />
                               </button>
 
-                              <button
-                                onClick={() => handleDeleteService(service.id)}
-                                className={`p-1 border rounded-md transition-all font-semibold text-[10px] uppercase inline-flex items-center ${
-                                  deleteConfirmId === service.id
-                                    ? "bg-red-600 hover:bg-red-700 text-white border-red-700 px-2"
-                                    : "bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 px-1.5"
-                                }`}
-                              >
-                                {deleteConfirmId === service.id ? "Confirmar" : <Trash2 className="w-3.5 h-3.5" />}
-                              </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => handleDeleteService(service.id)}
+                                  className={`p-1 border rounded-md transition-all font-semibold text-[10px] uppercase inline-flex items-center ${
+                                    deleteConfirmId === service.id
+                                      ? "bg-red-600 hover:bg-red-700 text-white border-red-700 px-2"
+                                      : "bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 px-1.5"
+                                  }`}
+                                >
+                                  {deleteConfirmId === service.id ? "Confirmar" : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1439,7 +2209,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <div className="bg-neutral-950 text-white p-5 flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-widest text-indigo-400">Recepción Taller</h4>
-                <p className="text-sm font-bold mt-1 text-slate-100">Evidencia de Fichaje: #{selectedServiceForModal.id.replace('serv-', '').slice(-4).toUpperCase()}</p>
+                <p className="text-sm font-bold mt-1 text-slate-100 font-mono">Evidencia de Fichaje: {formatFolio(selectedServiceForModal.id)}</p>
               </div>
               <button 
                 type="button" 
@@ -1636,7 +2406,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <div className="bg-[#1c1d22] text-white p-5 flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-widest text-[#00bcd4]">Reporte Técnico Taller</h4>
-                <p className="text-sm font-bold mt-1 text-slate-100">Checklist Operativo: #{selectedServiceForModal.id.replace('serv-', '').slice(-4).toUpperCase()}</p>
+                <p className="text-sm font-bold mt-1 text-slate-100 font-mono">Checklist Operativo: {formatFolio(selectedServiceForModal.id)}</p>
               </div>
               <button 
                 type="button" 
@@ -1740,7 +2510,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             <div className="bg-emerald-950 text-white p-5 flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-widest text-emerald-400">Entrega y Liberación de Llaves</h4>
-                <p className="text-sm font-bold mt-1 text-slate-100">Filtros de Seguridad: #{selectedServiceForModal.id.replace('serv-', '').slice(-4).toUpperCase()}</p>
+                <p className="text-sm font-bold mt-1 text-slate-100 font-mono">Filtros de Seguridad: {formatFolio(selectedServiceForModal.id)}</p>
               </div>
               <button 
                 type="button" 
@@ -1765,100 +2535,32 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
               {/* Step 1: Front ID */}
               {deliveryStep === 'doc-front' && (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-fade-in">
                   <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
                     <strong>Paso 1: Foto Frontal de Identificación Oficial</strong>
-                    <p className="text-gray-500 mt-0.5">Capture una identificación oficial vigente del titular (INE, Licencia de Conducir, Cédula Profesional o Cartilla Militar).</p>
+                    <p className="text-gray-500 mt-0.5">Capture una identificación oficial vigente del titular (INE, Licencia, Cédula o Cartilla). La imagen se recortará automáticamente al contorno de la credencial.</p>
                   </div>
 
-                  {isValidatingFront ? (
-                    <div className="border border-emerald-150 rounded-xl py-12 bg-emerald-50/20 text-center space-y-3 animate-pulse">
-                      <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-xs font-bold text-emerald-800">Verificando validez del ID con Inteligencia Artificial...</p>
-                    </div>
-                  ) : (
-                    <CameraCapture 
-                      label="Capturar ID Frente (Lado Foto)" 
-                      onCapture={async (b64) => {
-                        if (!b64) {
-                          setDeliveryFotoIdFront('');
-                          setTempB64('');
-                          return;
-                        }
-                        setTempB64(b64);
-                        setIsValidatingFront(true);
-                        setValidationError('');
-                        try {
-                          const res = await fetch('/api/ai/validate-id', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image64: b64, side: 'front' })
-                          });
-                          const data = await res.json();
-                          if (data.isValid) {
-                            let processedB64 = b64;
-                            if (data.cropBox) {
-                              try {
-                                processedB64 = await cropBase64Image(b64, data.cropBox);
-                              } catch (cropErr) {
-                                console.warn("Auto-cropping failed, using original", cropErr);
-                              }
-                            }
-                            setDeliveryFotoIdFront(processedB64);
-                            setTempB64('');
-                            triggerAlertPop(`Identificación Válida: Lado Frontal de ${data.idType || 'INE'}.\n\nEstatus: ${data.message || 'Se verificó con éxito y se recortó automáticamente para centrar la credencial.'}`, "Verificación Exitosa", "success");
-                            setDeliveryStep('doc-back');
-                          } else {
-                            setDeliveryFotoIdFront('');
-                            setValidationError(`⚠️ No es una identificación oficial válida. ${data.message}`);
-                            triggerAlertPop(`Documento Inválido\n\n${data.message || 'Asegúrese de capturar un ID oficial válido (INE, Licencia, Cédula o Cartilla).'}`, "Identificación Inválida", "error");
-                          }
-                        } catch (err) {
-                          console.warn("API Error validation fallback: ", err);
-                          setDeliveryFotoIdFront('');
-                          setValidationError("⚠️ ID inválida: No se pudo verificar como identificación oficial. Asegúrese de capturar un ID oficial vigente (INE, Licencia, Cédula o Cartilla) con iluminación delantera nítida.");
-                          triggerAlertPop("No fue posible validar el documento como una identificación oficial mexicana válida.", "ID Inválida", "error");
-                        } finally {
-                          setIsValidatingFront(false);
-                        }
-                      }}
-                      savedImage={deliveryFotoIdFront}
-                      hideUpload={true}
-                    />
-                  )}
-
-                  {validationError && (
-                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
-                      {validationError}
-                    </div>
-                  )}
-
-                  {validationError && tempB64 && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm animate-fade-in">
-                      <p className="font-semibold flex items-center gap-1.5">
-                        <span>⚠️</span>
-                        <span>¿La identificación es correcta pero la IA la rechaza?</span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeliveryFotoIdFront(tempB64);
-                          setTempB64('');
-                          setValidationError('');
-                          triggerAlertPop("Identificación frontal aprobada manualmente por el Asesor.", "Aprobación Manual", "success");
-                          setDeliveryStep('doc-back');
-                        }}
-                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-[10.5px] uppercase tracking-wider cursor-pointer shadow-xs"
-                      >
-                        Aprobar Captura Manualmente de Frente y Avanzar
-                      </button>
-                    </div>
-                  )}
+                  <CameraCapture 
+                    label="Capturar ID Frente (Lado Foto)" 
+                    forceHorizontal={true}
+                    onCapture={async (b64) => {
+                      if (!b64) {
+                        setDeliveryFotoIdFront('');
+                        return;
+                      }
+                      setDeliveryFotoIdFront(b64);
+                      triggerAlertPop("Fotografía frontal capturada con éxito (recortada al contorno).", "Foto de Frente Guardada", "success");
+                      setDeliveryStep('doc-back');
+                    }}
+                    savedImage={deliveryFotoIdFront}
+                    hideUpload={true}
+                    badgeLabel="FRENTE"
+                  />
 
                   <div className="flex gap-3 pt-2">
                     <button
                       type="button"
-                      disabled={isValidatingFront}
                       onClick={() => { setSelectedServiceForModal(null); setModalType(null); }}
                       className="flex-1 py-2.5 bg-white hover:bg-slate-50 border border-gray-300 rounded-lg text-xs font-bold text-gray-650"
                     >
@@ -1870,95 +2572,28 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
 
               {/* Step 2: Back ID */}
               {deliveryStep === 'doc-back' && (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-fade-in">
                   <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-neutral-900 text-[10.5px] leading-relaxed">
                     <strong>Paso 2: Foto Reverso de Identificación Oficial</strong>
-                    <p className="text-gray-500 mt-0.5">Capture el reverso de la identificación oficial (donde se observa la firma autógrafa, sello o código de barras).</p>
+                    <p className="text-gray-500 mt-0.5">Capture el reverso de la identificación oficial. La imagen se recortará automáticamente al contorno de la credencial.</p>
                   </div>
 
-                  {isValidatingBack ? (
-                    <div className="border border-emerald-150 rounded-xl py-12 bg-emerald-50/20 text-center space-y-3 animate-pulse">
-                      <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-xs font-bold text-emerald-800">Validando autenticidad del reverso...</p>
-                    </div>
-                  ) : (
-                    <CameraCapture 
-                      label="Capturar ID Reverso (Lado Firma)" 
-                      onCapture={async (b64) => {
-                        if (!b64) {
-                          setDeliveryFotoIdBack('');
-                          setTempB64('');
-                          return;
-                        }
-                        setTempB64(b64);
-                        setIsValidatingBack(true);
-                        setValidationError('');
-                        try {
-                          const res = await fetch('/api/ai/validate-id', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image64: b64, side: 'back' })
-                          });
-                          const data = await res.json();
-                          if (data.isValid) {
-                            let processedB64 = b64;
-                            if (data.cropBox) {
-                              try {
-                                processedB64 = await cropBase64Image(b64, data.cropBox);
-                              } catch (cropErr) {
-                                console.warn("Auto-cropping failed, using original", cropErr);
-                              }
-                            }
-                            setDeliveryFotoIdBack(processedB64);
-                            setTempB64('');
-                            triggerAlertPop(`Identificación Válida: Lado Reverso verificado correctamente. El fondo se ha recortado automáticamente para centrar la credencial.`, "Verificación Exitosa", "success");
-                            setDeliveryStep('firma-cliente');
-                          } else {
-                            setDeliveryFotoIdBack('');
-                            setValidationError(`⚠️ Reverso no válido. ${data.message}`);
-                            triggerAlertPop(`Reverso Inválido\n\n${data.message || 'Asegúrese de tomar foto al lado reverso del documento de identidad.'}`, "Reverso no Válido", "error");
-                          }
-                        } catch (err) {
-                          console.warn("API Error validation back fallback: ", err);
-                          setDeliveryFotoIdBack('');
-                          setValidationError("⚠️ ID inválida: No se pudo verificar el reverso como identificación oficial. Asegúrese de capturar la parte trasera del documento con iluminación nítida.");
-                          triggerAlertPop("No fue posible validar el reverso del documento como una identificación oficial mexicana válida.", "ID Reverso Inválida", "error");
-                        } finally {
-                          setIsValidatingBack(false);
-                        }
-                      }}
-                      savedImage={deliveryFotoIdBack}
-                      hideUpload={true}
-                    />
-                  )}
-
-                  {validationError && (
-                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-lg text-[10.5px] leading-relaxed font-semibold">
-                      {validationError}
-                    </div>
-                  )}
-
-                  {validationError && tempB64 && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-xl text-xs space-y-2.5 shadow-sm animate-fade-in">
-                      <p className="font-semibold flex items-center gap-1.5">
-                        <span>⚠️</span>
-                        <span>¿El reverso es correcto pero la IA lo rechaza?</span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeliveryFotoIdBack(tempB64);
-                          setTempB64('');
-                          setValidationError('');
-                          triggerAlertPop("Reverso de identificación aprobado manualmente por el Asesor.", "Aprobación Manual", "success");
-                          setDeliveryStep('firma-cliente');
-                        }}
-                        className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-[10.5px] uppercase tracking-wider cursor-pointer shadow-xs"
-                      >
-                        Aprobar Captura Manualmente de Reverso y Avanzar
-                      </button>
-                    </div>
-                  )}
+                  <CameraCapture 
+                    label="Capturar ID Reverso (Lado Firma)" 
+                    forceHorizontal={true}
+                    onCapture={async (b64) => {
+                      if (!b64) {
+                        setDeliveryFotoIdBack('');
+                        return;
+                      }
+                      setDeliveryFotoIdBack(b64);
+                      triggerAlertPop("Fotografía trasera capturada con éxito (recortada al contorno).", "Foto de Reverso Guardada", "success");
+                      setDeliveryStep('firma-cliente');
+                    }}
+                    savedImage={deliveryFotoIdBack}
+                    hideUpload={true}
+                    badgeLabel="VUELTA"
+                  />
 
                   <div className="flex gap-3 pt-2">
                     <button
@@ -2065,23 +2700,49 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
         <div id="print-overlay-document" className="fixed inset-0 bg-neutral-900 bg-zinc-950 p-4 md:p-8 z-50 overflow-y-auto animate-fade-in flex flex-col justify-start items-center select-text">
           
           {/* Top controller actions - hidden on paper print */}
-          <div className="w-full max-w-4xl bg-zinc-900 text-white rounded-t-2xl p-4 flex items-center justify-between border-b border-zinc-805 print:hidden">
+          <div className="w-full max-w-4xl bg-zinc-900 text-white rounded-t-2xl p-4 flex items-center justify-between gap-3 border-b border-zinc-805 print:hidden">
             <div className="flex items-center space-x-2">
               <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
-              <span className="text-xs font-black uppercase tracking-wider">Reporte Técnico e Historial de Entrega Oficial</span>
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider block">Reporte Técnico e Historial de Entrega Oficial</span>
+              </div>
             </div>
             
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => window.print()}
-                className="p-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase transition-all flex items-center space-x-1.5 shadow"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Imprimir Reporte</span>
-              </button>
+            <div className="flex items-center space-x-3 shrink-0">
+              {printService.status?.toLowerCase() === 'entregado' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                    handleDownloadPdf();
+                  }}
+                  disabled={isGeneratingPdf}
+                  className={`p-2 px-4 ${
+                    isGeneratingPdf 
+                      ? 'bg-emerald-700/50 cursor-wait text-gray-200' 
+                      : 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white cursor-pointer'
+                  } rounded-lg text-xs font-bold uppercase transition-all flex items-center space-x-1.5 shadow-md`}
+                  title="Guardar reporte oficial en tu computadora como archivo PDF"
+                >
+                  {isGeneratingPdf ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Generando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Descargar</span>
+                      <MiniPdfIcon />
+                    </>
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={() => setPrintService(null)}
-                className="p-2 px-3 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg text-xs transition-colors"
+                className="p-2 px-3 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg text-xs transition-colors cursor-pointer"
               >
                 Cerrar Reporte
               </button>
@@ -2091,6 +2752,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
           {/* Core Printable Sheet Content */}
           <div id="printable-service-sheet" className="w-full max-w-4xl bg-white text-stone-900 p-8 md:p-12 shadow-2xl relative rounded-b-2xl mb-8 print:m-0 print:p-0 print:shadow-none print:w-full">
             
+
             {/* Print Friendly CSS Injector */}
             <style>{`
               @media print {
@@ -2210,21 +2872,30 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   background-color: #fafafa !important;
                 }
                 
-                /* Scale images down so they do not bloat the paper heights */
+                /* Scale images properly so they are larger but still fit under 3 pages */
                 #printable-service-sheet img {
-                  max-height: 48px !important;
-                  width: auto !important;
-                  object-fit: contain !important;
+                  max-height: 154px !important;
+                  width: 100% !important;
+                  object-fit: cover !important;
                   margin: 0 auto !important;
                 }
                 #printable-service-sheet .aspect-video {
                   aspect-ratio: auto !important;
-                  height: 52px !important;
+                  height: 160px !important;
                 }
 
                 /* Official ID pictures special limits */
                 #printable-service-sheet .max-h-36 {
-                  max-height: 55px !important;
+                  max-height: 160px !important;
+                }
+
+                /* Keep signatures and small symbols size-constrained */
+                #printable-service-sheet div[class*="max-h-16"] img,
+                #printable-service-sheet img[alt*="Firma"],
+                #printable-service-sheet img[alt*="firma"] {
+                  max-height: 48px !important;
+                  width: auto !important;
+                  object-fit: contain !important;
                 }
                 
                 /* Signatures container p-4 adjustment */
@@ -2245,7 +2916,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                 <div className="flex items-center space-x-3.5">
                   <KiotoLogo className="h-11 w-auto" />
                   <div>
-                    <h2 className="text-xl font-black text-neutral-900 tracking-tight leading-none">Kioto Motors S.A. de C.V.</h2>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight leading-none">Automotriz Kioto S.A. de C.V.</h2>
                     <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#666] mt-1">Taller de Servicio Mecánico Autorizado</p>
                   </div>
                 </div>
@@ -2260,7 +2931,7 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   Folio del Servicio
                 </span>
                 <div className="text-xl font-black font-mono mt-1 text-slate-900">
-                  #{printService.id.replace('serv-', '').slice(-4).toUpperCase()}
+                  {formatFolio(printService.id)}
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2 font-semibold">
                   Fecha Emisión: {new Date().toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
@@ -2385,12 +3056,12 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
               )}
             </div>
 
-            {/* Checklist Técnico acomodado a lo ancho de la hoja (3-Column Grid) */}
-            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-white shadow-xs">
-              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-3.5 select-none">
+            {/* Checklist Técnico acomodado a lo ancho de la hoja (3-Column Grid, reduced by 15%) */}
+            <div id="printable-checklist-container" className="border border-gray-200 rounded-xl p-4 mb-4 bg-white shadow-xs print-block-avoid">
+              <h4 className="text-[10px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-1.5 mb-2.5 select-none animate-fade-in">
                 📋 Diagnóstico Completo y Checklist Técnico Vehicular
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 select-text text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-5 gap-y-1 select-text text-[10px]">
                 {(() => {
                   const configured = checklistParts.length > 0 ? checklistParts : standardChecklistParts;
                   const customizedKeys = Object.keys(printService.checklist || {});
@@ -2398,15 +3069,15 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
                   return allKeys.map((part) => {
                     const isChecked = printService.checklist?.[part];
                     return (
-                      <div key={part} className="flex items-center space-x-2.5 py-1.5 border-b border-slate-50 select-text">
+                      <div key={part} className="flex items-center space-x-2 py-1.5 border-b border-slate-50 select-text">
                         {isChecked ? (
-                          <div className="w-4.5 h-4.5 rounded-full border-2 border-emerald-500 bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                            <span className="text-[10px] font-extrabold leading-none">✓</span>
+                          <div className="w-4 h-4 rounded-full border border-emerald-500 bg-emerald-50 flex items-center justify-center shrink-0">
+                            <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3.5]" />
                           </div>
                         ) : (
-                          <div className="w-4.5 h-4.5 rounded-full border border-slate-250 bg-white shrink-0" />
+                          <div className="w-4 h-4 rounded-full border border-slate-300 bg-white shrink-0" />
                         )}
-                        <span className={`text-[11.5px] leading-tight tracking-tight ${isChecked ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'}`}>
+                        <span className={`text-[10px] leading-tight tracking-tight ${isChecked ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium'}`}>
                           {part}
                         </span>
                       </div>
@@ -2427,42 +3098,58 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
             </div>
 
             {/* Recomendaciones */}
-            <div className="border border-orange-200 rounded-xl p-5 mb-5 bg-orange-50/20 print-block-avoid">
-              <h4 className="text-[11px] font-black text-orange-800 tracking-widest uppercase border-b border-orange-200 pb-1.5 mb-2.5 select-none">
-                ⚠️ Recomendaciones de Seguridad Futura
+            <div className="border border-gray-200 rounded-xl p-5 mb-5 bg-slate-50/50 print-block-avoid">
+              <h4 className="text-[11px] font-black text-slate-600 tracking-widest uppercase border-b border-gray-250 pb-1.5 mb-2.5 select-none">
+                Observaciones y Recomendaciones de Seguridad
               </h4>
-              <div className="text-xs leading-relaxed text-orange-950 whitespace-pre-line font-semibold select-text">
+              <div className="text-xs leading-relaxed text-gray-800 whitespace-pre-line font-semibold select-text">
                 {printService.recomendacionesMecanico || "El vehículo se encuentra en óptimas condiciones. Se recomienda programar su próximo chequeo en 5,000 km o 6 meses."}
               </div>
             </div>
 
             {/* Fotografías de Identificación de Cliente (Frente y Reverso) */}
             <div className="border border-gray-200 rounded-xl p-5 mb-6 bg-slate-50 print-block-avoid">
-              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-2 mb-4 select-none">
+              <h4 className="text-[11px] font-black text-slate-500 tracking-widest uppercase border-b border-gray-200 pb-2 mb-6 select-none">
                 🪪 Fotografías de Identificación Oficial (Vigente para Entrega)
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="text-center bg-white p-3 rounded-xl border border-gray-200 space-y-2">
-                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificación Oficial - Frente</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 md:gap-10 max-w-2xl mx-auto px-4 py-2">
+                
+                {/* ID FRENTE */}
+                <div className="relative">
                   {printService.deliveryFotoIdFront ? (
-                    <div className="border border-slate-200 bg-neutral-900 rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-                      <img src={printService.deliveryFotoIdFront} alt="ID Frente" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
+                    <div className="relative border border-neutral-900 bg-[#0b0b0c] p-1.5 rounded-2xl shadow-xl aspect-[1.58] w-full flex items-center justify-center overflow-visible">
+                      <img src={printService.deliveryFotoIdFront} alt="ID Frente" className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" />
+                      
+                      {/* Overlapping Frente Badge */}
+                      <div className="absolute -top-3 right-4 bg-white border border-gray-250 shadow-md font-sans text-[10px] font-black text-black tracking-wider px-3.5 py-1.5 rounded-lg uppercase select-none z-10">
+                        FRENTE
+                      </div>
                     </div>
                   ) : (
-                    <div className="border border-gray-150 py-10 bg-gray-50 flex items-center justify-center text-[11px] text-gray-400 italic">No capturado</div>
+                    <div className="relative border border-dashed border-gray-300 bg-white rounded-2xl aspect-[1.58] w-full flex flex-col items-center justify-center text-[11px] text-gray-400 italic">
+                      <span>Frente no capturado</span>
+                    </div>
                   )}
                 </div>
 
-                <div className="text-center bg-white p-3 rounded-xl border border-gray-200 space-y-2">
-                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificación Oficial - Reverso</span>
+                {/* ID VUELTA / REVERSO */}
+                <div className="relative">
                   {printService.deliveryFotoIdBack ? (
-                    <div className="border border-slate-200 bg-neutral-900 rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-                      <img src={printService.deliveryFotoIdBack} alt="ID Reverso" className="max-h-36 object-contain" referrerPolicy="no-referrer" />
+                    <div className="relative border border-neutral-900 bg-[#0b0b0c] p-1.5 rounded-2xl shadow-xl aspect-[1.58] w-full flex items-center justify-center overflow-visible">
+                      <img src={printService.deliveryFotoIdBack} alt="ID Reverso" className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" />
+                      
+                      {/* Overlapping Vuelta Badge */}
+                      <div className="absolute -top-3 right-4 bg-white border border-gray-250 shadow-md font-sans text-[10px] font-black text-black tracking-wider px-3.5 py-1.5 rounded-lg uppercase select-none z-10">
+                        VUELTA
+                      </div>
                     </div>
                   ) : (
-                    <div className="border border-gray-150 py-10 bg-gray-50 flex items-center justify-center text-[11px] text-gray-400 italic">No capturado</div>
+                    <div className="relative border border-dashed border-gray-300 bg-white rounded-2xl aspect-[1.58] w-full flex flex-col items-center justify-center text-[11px] text-gray-400 italic">
+                      <span>Vuelta no capturada</span>
+                    </div>
                   )}
                 </div>
+
               </div>
             </div>
 
@@ -2509,6 +3196,279 @@ export default function ServiciosTaller({ services, onServiceUpdated, isAdmin }:
           </div>
         </div>,
         document.body
+      )}
+
+      {/* =======================================================
+          DETALLE DE SERVICIO E IMÁGENES CAROUSEL MODAL
+          ======================================================= */}
+      {detailService && (
+        createPortal(
+          <div 
+            className="fixed inset-0 bg-neutral-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-3 sm:p-5 overflow-y-auto select-text"
+            onClick={() => setDetailService(null)}
+          >
+            <div 
+              className="bg-white rounded-[24px] w-full max-w-5xl shadow-2xl border border-gray-150 flex flex-col lg:flex-row overflow-hidden animate-scale-up max-h-[92vh] lg:max-h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              
+              {/* PANEL IZQUIERDO: Carrusel de Fotos */}
+              <div className="lg:w-[58%] bg-zinc-950 text-white flex flex-col justify-between relative p-4 min-h-[350px] lg:min-h-0">
+                
+                {/* Header visual del carrusel */}
+                <div className="flex items-center justify-between border-b border-zinc-900 pb-2 mb-2 select-none">
+                  <span className="text-[10px] font-mono tracking-widest text-zinc-500 uppercase flex items-center gap-1.5 font-bold">
+                    <Camera className="w-3.5 h-3.5 text-zinc-400" />
+                    Evidencia Fotográfica Digital
+                  </span>
+                  <span className="text-[10px] font-mono text-zinc-400 font-extrabold px-2 py-0.5 bg-zinc-900 rounded-full">
+                    {extractImagesFromService(detailService).length > 0 
+                      ? `${activeCarouselIndex + 1} / ${extractImagesFromService(detailService).length}`
+                      : '0 / 0'
+                    }
+                  </span>
+                </div>
+
+                {/* Visor central de imagen principal */}
+                <div className="flex-1 flex items-center justify-center relative bg-zinc-900/40 rounded-xl overflow-hidden p-2">
+                  {(() => {
+                    const imgs = extractImagesFromService(detailService);
+                    if (imgs.length === 0) {
+                      return (
+                        <div className="text-center py-16 px-4 space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center mx-auto text-zinc-500">
+                            <Camera className="w-6 h-6" />
+                          </div>
+                          <p className="text-xs text-zinc-400 font-medium max-w-xs mx-auto">
+                            Este registro de servicio mecánico no cuenta con fotografías de recepción, firmas digitales o identificaciones oficiales registradas aún.
+                          </p>
+                        </div>
+                      );
+                    }
+                    
+                    const activeImg = imgs[activeCarouselIndex];
+                    return (
+                      <>
+                        {/* Botón flecha izquierda */}
+                        {imgs.length > 1 && (
+                          <button
+                            onClick={() => setActiveCarouselIndex((prev) => (prev - 1 + imgs.length) % imgs.length)}
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center transition-all cursor-pointer border border-zinc-800 z-10"
+                            title="Foto anterior"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                        )}
+
+                        <img 
+                          src={activeImg.url} 
+                          alt={activeImg.label} 
+                          className="max-h-[260px] sm:max-h-[350px] lg:max-h-[420px] w-full object-contain select-none transition-all duration-300 transform scale-100 rounded-lg hover:scale-[1.02]" 
+                          referrerPolicy="no-referrer"
+                        />
+
+                        {/* Botón flecha derecha */}
+                        {imgs.length > 1 && (
+                          <button
+                            onClick={() => setActiveCarouselIndex((prev) => (prev + 1) % imgs.length)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center transition-all cursor-pointer border border-zinc-800 z-10"
+                            title="Siguiente foto"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        )}
+
+                        {/* Título flotante de la foto activa */}
+                        <div className="absolute bottom-3 left-3 right-3 bg-black/75 backdrop-blur-xs px-3 py-2 rounded-lg text-center text-xs font-bold text-gray-200 border border-zinc-800">
+                          {activeImg.label} ({activeImg.type})
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Miniaturas interactivas (thumbnails tray) */}
+                {(() => {
+                  const imgs = extractImagesFromService(detailService);
+                  if (imgs.length <= 1) return null;
+                  return (
+                    <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-zinc-800 select-none">
+                      {imgs.map((img, idx) => {
+                        const isActive = idx === activeCarouselIndex;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setActiveCarouselIndex(idx)}
+                            className={`relative shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-lg overflow-hidden border-2 bg-zinc-900 transition-all cursor-pointer ${
+                              isActive ? 'border-indigo-500 ring-2 ring-indigo-500/20 scale-95' : 'border-zinc-800 hover:border-zinc-500'
+                            }`}
+                          >
+                            <img src={img.url} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <div className={`absolute inset-0 bg-black/30 transition-all ${isActive ? 'bg-transparent' : ''}`} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+              </div>
+
+              {/* PANEL DERECHO: Detalles Generales, Bitácora y Checklist */}
+              <div className="lg:w-[42%] bg-white p-4 sm:p-5 flex flex-col justify-between overflow-y-auto max-h-[50vh] lg:max-h-full">
+                
+                <div className="space-y-4">
+                  {/* Header del servicio */}
+                  <div className="flex items-start justify-between border-b border-gray-150 pb-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-full">
+                          {formatFolio(detailService.id)}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-extrabold border ${
+                          detailService.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                          detailService.status === 'atendido' ? 'bg-teal-50 text-teal-800 border-teal-200' :
+                          detailService.status === 'en proceso' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                          detailService.status === 'vehículo recibido' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                          'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}>
+                          {detailService.status}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-black text-gray-950 leading-tight">
+                        {detailService.vehicle}
+                      </h3>
+                      <div className="text-[10.5px] text-gray-400 font-mono">
+                        Placa: <strong className="text-gray-800">{detailService.plate}</strong>
+                        <span className="mx-1">•</span>
+                        NIV: <strong className="text-gray-850 font-semibold">{detailService.vin}</strong>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setDetailService(null)}
+                      className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-gray-500 transition-colors cursor-pointer shrink-0 border border-gray-200"
+                      title="Cerrar ventana"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Datos del Cliente */}
+                  <div className="bg-slate-50/50 p-2.5 rounded-xl border border-gray-150/40 space-y-1 text-xs">
+                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">Información de Propietario</span>
+                    <div className="font-bold text-gray-900">{detailService.clientName}</div>
+                    <div className="text-gray-500 font-medium">Celular: <span className="font-mono">{detailService.clientPhone}</span></div>
+                    <div className="text-xs text-gray-400 pt-1 border-t border-gray-100 flex justify-between">
+                      <span>Agendado con: <strong className="text-gray-650 capitalize font-bold">{detailService.source}</strong></span>
+                      <span>Especialista: <strong className="text-gray-650 font-bold">{detailService.assignedServiceUser || 'No asignado'}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Notas o comentarios del cliente de recepción */}
+                  {detailService.comentariosClienteRecepcion && (
+                    <div className="space-y-1">
+                      <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-wider select-none">
+                        🗣 Observaciones iniciales del cliente
+                      </h4>
+                      <p className="text-xs bg-amber-50/40 border border-amber-100 text-amber-950 p-2.5 rounded-xl leading-relaxed italic font-medium">
+                        "{detailService.comentariosClienteRecepcion}"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Notas o comentarios del mecánico */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-wider select-none">
+                      ⚙️ Diagnóstico e Intervención del Mecánico
+                    </h4>
+                    <p className="text-xs leading-relaxed text-gray-700 bg-slate-50 p-3 rounded-xl border border-gray-150/40 whitespace-pre-line font-medium">
+                      {detailService.comentariosMecanico || "Sin observaciones o bitácora de intervenciones mecánicas registrada."}
+                    </p>
+                  </div>
+
+                  {/* Recomendaciones */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-wider select-none">
+                      🧯 Recomendaciones Futuras de Seguridad
+                    </h4>
+                    <p className="text-xs leading-relaxed text-orange-950 bg-orange-50/20 p-3 rounded-xl border border-orange-100 font-semibold whitespace-pre-line">
+                      {detailService.recomendacionesMecanico || "El vehículo se encuentra en óptimas condiciones de funcionamiento. No se requieren intervenciones críticas."}
+                    </p>
+                  </div>
+
+                  {/* Checklist resumen rápido de puntos validados */}
+                  <div className="space-y-2 border-t border-gray-150 pt-3">
+                    <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-wider select-none">
+                      📋 Checklist Técnico ({Object.values(detailService.checklist || {}).filter(Boolean).length} puntos aprobados)
+                    </h4>
+                    <div className="grid grid-cols-2 gap-1 px-1">
+                      {(() => {
+                        const configured = checklistParts.length > 0 ? checklistParts : standardChecklistParts;
+                        return configured.slice(0, 10).map((part) => {
+                          const isChecked = detailService.checklist?.[part];
+                          return (
+                            <div key={part} className="flex items-center space-x-1.5 text-[10.5px]">
+                              {isChecked ? (
+                                <span className="text-emerald-500 font-bold shrink-0">✓</span>
+                              ) : (
+                                <span className="text-red-300 font-light shrink-0">•</span>
+                              )}
+                              <span className={`truncate leading-none ${isChecked ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
+                                {part}
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Footer del panel derecho con botón de imprimir pdf si está completado */}
+                <div className="mt-5 pt-3 border-t border-gray-150 flex items-center justify-between gap-3">
+                  <div className="text-[10px] text-gray-400 font-medium leading-none font-mono">
+                    Registrado: {new Date(detailService.createdAt).toLocaleDateString()}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setDetailService(null)}
+                      className="px-4 py-2 border border-gray-250 rounded-xl text-xs font-black text-gray-700 hover:bg-slate-50 cursor-pointer transition-colors"
+                    >
+                      Cerrar
+                    </button>
+                     {detailService.status === 'entregado' ? (
+                      <button
+                        onClick={() => {
+                          setPrintService(detailService);
+                        }}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                        title="Ver Reporte Técnico en PDF"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Reporte</span>
+                        <MiniPdfIcon />
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        className="px-4 py-2 bg-slate-100 text-slate-400 border border-slate-200 rounded-xl text-xs font-black cursor-not-allowed opacity-60 flex items-center gap-1.5"
+                        title="El reporte técnico en PDF estará deshabilitado hasta que el vehículo se marque como Entregado"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Reporte</span>
+                        <MiniPdfIcon />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          </div>,
+          document.body
+        )
       )}
 
       {/* =======================================================

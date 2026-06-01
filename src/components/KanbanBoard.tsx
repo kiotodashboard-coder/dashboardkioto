@@ -236,7 +236,7 @@ export default function KanbanBoard({ services, onServiceUpdated, isAdmin }: Kan
                         </div>
 
                         {/* Admin delete capability with double-click safety */}
-                        {(isAdmin || service.source === 'chatbot') && (
+                        {isAdmin && (
                           <button
                             onClick={() => handleDelete(service.id)}
                             className={`p-1 border rounded transition-all shrink-0 cursor-pointer font-bold text-[9px] select-none flex items-center space-x-1 ${

@@ -28,6 +28,16 @@ interface DashboardOverviewProps {
   onRefresh: () => void;
 }
 
+function formatFolio(id: string): string {
+  if (!id) return '';
+  if (id.startsWith('KSM-')) return id;
+  const num = id.replace(/^(serv-|cb-)/, '').replace(/[^0-9]/g, '');
+  if (num.length >= 6) {
+    return 'KSM-' + num.slice(-6);
+  }
+  return 'KSM-' + (id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase().padStart(6, '0'));
+}
+
 export default function DashboardOverview({ services, onRefresh }: DashboardOverviewProps) {
   const [aiInsights, setAiInsights] = useState<string>('');
   const [loadingAi, setLoadingAi] = useState<boolean>(false);
@@ -242,7 +252,7 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
       }
 
       return [
-        `#${(s.id || '').replace('serv-', '').slice(-4).toUpperCase()}`,
+        formatFolio(s.id || ''),
         s.clientName || 'N/A',
         s.clientPhone ? `\t${s.clientPhone}` : 'N/A',
         s.vehicle || 'N/A',
@@ -1109,7 +1119,7 @@ export default function DashboardOverview({ services, onRefresh }: DashboardOver
               </thead>
               <tbody className="divide-y divide-gray-100 text-xs">
                 {filteredServices.map(s => {
-                  const folio = `#${s.id.replace('serv-', '').replace('cb-', '').slice(-4).toUpperCase()}`;
+                  const folio = formatFolio(s.id);
                   
                   // Canal source mapping with beautiful custom responsive badges
                   const sourceLower = (s.source || "").toLowerCase();

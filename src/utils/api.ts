@@ -3,10 +3,10 @@ import {
   getFirestore, 
   collection, 
   doc, 
-  getDocs, 
-  getDoc, 
-  setDoc, 
-  deleteDoc 
+  getDocs as firestoreGetDocs, 
+  getDoc as firestoreGetDoc, 
+  setDoc as firestoreSetDoc, 
+  deleteDoc as firestoreDeleteDoc 
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
@@ -19,6 +19,275 @@ const DEFAULT_USERS = [
 ];
 
 const INITIAL_SERVICIOS: any[] = [];
+
+// LocalStorage keys for Firestore collection fallbacks
+const DB_FALLBACKS: Record<string, string> = {
+  users: "kioto_local_db_users",
+  servicios: "kioto_local_db_servicios",
+  "config/programming": "kioto_local_db_config_programming",
+  "config/chatbot": "kioto_local_db_config_chatbot"
+};
+
+// Helper to load fallback collection list
+function getFallbackCollection(col: string): any[] {
+  try {
+    const raw = localStorage.getItem(DB_FALLBACKS[col] || `kioto_local_db_${col}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error("Local DB read failed:", e);
+  }
+  
+  // Default values
+  if (col === "users") {
+    return [...DEFAULT_USERS];
+  }
+  if (col === "servicios") {
+    return [...INITIAL_SERVICIOS];
+  }
+  return [];
+}
+
+// Helper to save fallback collection list
+function saveFallbackCollection(col: string, list: any[]) {
+  try {
+    localStorage.setItem(DB_FALLBACKS[col] || `kioto_local_db_${col}`, JSON.stringify(list));
+  } catch (e) {
+    console.error("Local DB write failed:", e);
+  }
+}
+
+// Helper to load single document
+function getFallbackDoc(collectionName: string, docId: string): any {
+  if (collectionName === "config") {
+    try {
+      const raw = localStorage.getItem(`kioto_local_db_config_${docId}`);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    if (docId === "programming") {
+      return {
+        maxServicesPerSlot: 2,
+        slotIntervalMinutes: 30,
+        openingTime: "08:00",
+        closingTime: "18:00",
+        toleranceMinutes: 15,
+        checklistItems: [
+          'Nivel de Aceite de Motor', 'Líquido de Dirección', 'Nivel de Anticongelante',
+          'Filtro de Aire', 'Líquido de Frenos', 'Filtro de Cabina', 'Batería (Voltaje/Terminales)',
+          'Bujías', 'Bandas de Motor', 'Mangueras', 'Rotación de llantas', 'Balatas Traseras',
+          'Suspensión (Bujes/Rótulas)', 'Fugas de Fluidos', 'Presión de Llantas', 'Alineación de llantas',
+          'Discos de Freno', 'Luces (Altas/Bajas/Stop)', 'Estado de Llantas (Desgaste)', 'Balatas Delanteras',
+          'Amortiguadores', 'Direcciones y Limpiaparabrisas'
+        ]
+      };
+    }
+    if (docId === "chatbot") {
+      return { web: true, whatsapp: true, messenger: true };
+    }
+    return null;
+  }
+  
+  const colList = getFallbackCollection(collectionName);
+  return colList.find(item => item.id === docId) || null;
+}
+
+// Helper to save single document
+function setFallbackDoc(collectionName: string, docId: string, data: any) {
+  if (collectionName === "config") {
+    try {
+      localStorage.setItem(`kioto_local_db_config_${docId}`, JSON.stringify(data));
+    } catch (e) {}
+    return;
+  }
+  
+  const colList = getFallbackCollection(collectionName);
+  const existingIdx = colList.findIndex(item => item.id === docId);
+  const updatedData = { ...data, id: docId };
+  if (existingIdx !== -1) {
+    colList[existingIdx] = { ...colList[existingIdx], ...updatedData };
+  } else {
+    colList.push(updatedData);
+  }
+  saveFallbackCollection(collectionName, colList);
+}
+
+// Helper to delete document
+function deleteFallbackDoc(collectionName: string, docId: string) {
+  if (collectionName === "config") {
+    try {
+      localStorage.removeItem(`kioto_local_db_config_${docId}`);
+    } catch (e) {}
+    return;
+  }
+  
+  const colList = getFallbackCollection(collectionName);
+  const filtered = colList.filter(item => item.id !== docId);
+  saveFallbackCollection(collectionName, filtered);
+}
+
+// Intercepted Firestore getters/setters with LocalStorage fallbacks
+async function getDocs(colRef: any): Promise<any> {
+  const path = colRef._path?.segments?.[0] || colRef.path || "";
+  try {
+    const snap = await firestoreGetDocs(colRef);
+    // Backup to localStorage for fallback use
+    try {
+      const list = snap.docs.map((d: any) => d.data());
+      localStorage.setItem(`kioto_local_db_${path}`, JSON.stringify(list));
+    } catch (e) {}
+    return snap;
+  } catch (err) {
+    console.warn(`Firestore getDocs failed for ${path}, falling back to LocalStorage`, err);
+    // Get from local storage
+    let list: any[] = [];
+    try {
+      const raw = localStorage.getItem(`kioto_local_db_${path}`);
+      if (raw) {
+        list = JSON.parse(raw);
+      } else {
+        if (path === "users") list = [...DEFAULT_USERS];
+        else if (path === "servicios") list = [...INITIAL_SERVICIOS];
+      }
+    } catch (e) {}
+    
+    // Return a mock QuerySnapshot structure
+    return {
+      empty: list.length === 0,
+      size: list.length,
+      docs: list.map((item: any) => ({
+        id: item.id || `mock-id-${Math.random()}`,
+        data: () => item,
+        ref: { id: item.id }
+      }))
+    };
+  }
+}
+
+async function getDoc(docRef: any): Promise<any> {
+  const pathSegments = docRef._path?.segments || docRef.path?.split("/") || [];
+  const colName = pathSegments[0];
+  const docId = pathSegments[1];
+  
+  try {
+    const snap = await firestoreGetDoc(docRef);
+    if (snap.exists()) {
+      try {
+        localStorage.setItem(`kioto_local_db_${colName}_${docId}`, JSON.stringify(snap.data()));
+      } catch (e) {}
+    }
+    return snap;
+  } catch (err) {
+    console.warn(`Firestore getDoc failed for ${colName}/${docId}, falling back to LocalStorage`, err);
+    let data: any = null;
+    try {
+      const raw = localStorage.getItem(`kioto_local_db_${colName}_${docId}`);
+      if (raw) {
+        data = JSON.parse(raw);
+      } else {
+        if (colName === "config" && docId === "programming") {
+          data = {
+            maxServicesPerSlot: 2,
+            slotIntervalMinutes: 30,
+            openingTime: "08:00",
+            closingTime: "18:00",
+            toleranceMinutes: 15,
+            checklistItems: [
+              'Nivel de Aceite de Motor', 'Líquido de Dirección', 'Nivel de Anticongelante',
+              'Filtro de Aire', 'Líquido de Frenos', 'Filtro de Cabina', 'Batería (Voltaje/Terminales)',
+              'Bujías', 'Bandas de Motor', 'Mangueras', 'Rotación de llantas', 'Balatas Traseras',
+              'Suspensión (Bujes/Rótulas)', 'Fugas de Fluidos', 'Presión de Llantas', 'Alineación de llantas',
+              'Discos de Freno', 'Luces (Altas/Bajas/Stop)', 'Estado de Llantas (Desgaste)', 'Balatas Delanteras',
+              'Amortiguadores', 'Direcciones y Limpiaparabrisas'
+            ]
+          };
+        } else if (colName === "config" && docId === "chatbot") {
+          data = { web: true, whatsapp: true, messenger: true };
+        } else {
+          // Check collections lists
+          const listRaw = localStorage.getItem(`kioto_local_db_${colName}`);
+          if (listRaw) {
+            const list = JSON.parse(listRaw);
+            data = list.find((item: any) => item.id === docId) || null;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    return {
+      exists: () => data !== null && data !== undefined,
+      data: () => data,
+      id: docId
+    };
+  }
+}
+
+async function setDoc(docRef: any, data: any, options?: any): Promise<any> {
+  const pathSegments = docRef._path?.segments || docRef.path?.split("/") || [];
+  const colName = pathSegments[0];
+  const docId = pathSegments[1];
+  
+  // Update local storage first
+  try {
+    if (colName === "config") {
+      const prevailing = getFallbackDoc("config", docId) || {};
+      const merged = options?.merge ? { ...prevailing, ...data } : data;
+      localStorage.setItem(`kioto_local_db_config_${docId}`, JSON.stringify(merged));
+    } else {
+      let list: any[] = [];
+      const listRaw = localStorage.getItem(`kioto_local_db_${colName}`);
+      if (listRaw) {
+        list = JSON.parse(listRaw);
+      } else {
+        if (colName === "users") list = [...DEFAULT_USERS];
+      }
+      
+      const idx = list.findIndex((item: any) => item.id === docId);
+      const mergedItem = options?.merge ? { ...(list[idx] || {}), ...data } : data;
+      const updatedItem = { ...mergedItem, id: docId };
+      
+      if (idx !== -1) {
+        list[idx] = updatedItem;
+      } else {
+        list.push(updatedItem);
+      }
+      localStorage.setItem(`kioto_local_db_${colName}`, JSON.stringify(list));
+    }
+  } catch (e) {}
+  
+  try {
+    return await firestoreSetDoc(docRef, data, options || {});
+  } catch (err) {
+    console.warn(`Firestore setDoc failed for ${colName}/${docId}, updated local storage only`, err);
+    return true;
+  }
+}
+
+async function deleteDoc(docRef: any): Promise<any> {
+  const pathSegments = docRef._path?.segments || docRef.path?.split("/") || [];
+  const colName = pathSegments[0];
+  const docId = pathSegments[1];
+  
+  // Update local storage
+  try {
+    if (colName === "config") {
+      localStorage.removeItem(`kioto_local_db_config_${docId}`);
+    } else {
+      let list: any[] = [];
+      const listRaw = localStorage.getItem(`kioto_local_db_${colName}`);
+      if (listRaw) {
+        list = JSON.parse(listRaw);
+      }
+      const filtered = list.filter((item: any) => item.id !== docId);
+      localStorage.setItem(`kioto_local_db_${colName}`, JSON.stringify(filtered));
+    }
+  } catch (e) {}
+  
+  try {
+    return await firestoreDeleteDoc(docRef);
+  } catch (err) {
+    console.warn(`Firestore deleteDoc failed for ${colName}/${docId}, updated local storage only`, err);
+    return true;
+  }
+}
 
 class MockResponse {
   ok: boolean;
@@ -169,7 +438,18 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         }
       }
 
-      servicios.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      servicios.sort((a: any, b: any) => {
+        const dateA = a.appointmentDate || "";
+        const dateB = b.appointmentDate || "";
+        if (dateA && dateB) {
+          if (dateA !== dateB) return dateA.localeCompare(dateB);
+        } else if (dateA) {
+          return -1;
+        } else if (dateB) {
+          return 1;
+        }
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
       return new MockResponse(servicios);
     } catch (err: any) {
       return new MockResponse({ error: err.message }, 500);
@@ -182,6 +462,12 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       const { clientName, clientPhone, vehicle, vin, plate, serviceType, appointmentDate, assignedServiceUser, notes, source } = body;
       if (!clientName || !clientPhone || !vehicle || !vin || !plate || !serviceType || !appointmentDate) {
         return new MockResponse({ error: "Faltan datos obligatorios del vehículo o servicio mecánico." }, 400);
+      }
+
+      const upperVin = String(vin || "").trim().toUpperCase();
+      const upperPlate = String(plate || "").trim().toUpperCase();
+      if (upperVin.length !== 17) {
+        return new MockResponse({ error: `El NIV (Número de Identificación Vehicular) debe tener exactamente 17 caracteres (recibidos: ${upperVin.length}).` }, 400);
       }
 
       const configRef = doc(dbClient, "config", "programming");
@@ -250,14 +536,15 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         }, 400);
       }
 
-      const id = `serv-${Date.now()}`;
+      const randomDigits = Math.floor(100000 + Math.random() * 900000);
+      const id = `KSM-${randomDigits}`;
       const newServicio = {
         id,
         clientName,
         clientPhone,
         vehicle,
-        vin,
-        plate,
+        vin: upperVin,
+        plate: upperPlate,
         serviceType,
         appointmentDate,
         assignedServiceUser: assignedServiceUser || "Carlos Taller (Técnico)",
@@ -645,20 +932,14 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
     if (!session) {
       const gatheredData: any = {};
-      let welcomeText = `¡Hola! Te atiende el **Asistente Kioto** 🤖. Estoy aquí para guiarte de forma sencilla, paso por paso, en el registro de tu cita de servicio mecánico en nuestro taller. Para comenzar, ¿cuál es tu nombre completo?`;
-
-      if (matchedService) {
-        gatheredData.clientName = matchedService.clientName;
-        gatheredData.clientPhone = matchedService.clientPhone;
-        gatheredData.alreadyRegistered = "true";
-        welcomeText = `¡Hola de nuevo, **${matchedService.clientName}**! Qué gusto saludarte 🤖. He detectado de manera intuitiva que tu número celular (${matchedService.clientPhone}) ya se encuentra registrado con nosotros.\n\nPara agendar un nuevo servicio, **no es necesario que vuelvas a indicar tu nombre ni teléfono/celular**.\n\n¿Qué tipo de servicio o mantenimiento mecánico requiere tu vehículo en esta ocasión? (Ej. Afinación, Cambio de aceite o Pastillas de freno).`;
-      }
+      const welcomeText = `¡Hola! Te atiende el **Asistente Kioto** 🤖. Estoy aquí para guiarte en el agendamiento y consulta de tu servicio mecánico. Para comenzar, ¿cuál es tu nombre completo?`;
 
       session = {
         id: `chat-${clientPhoneOrId}`,
         clientPhoneOrId,
-        clientName: matchedService ? matchedService.clientName : clientName,
+        clientName: clientName,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         gatheredData,
         messages: [
           {
@@ -680,6 +961,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
     const { clientPhoneOrId, clientName, message: userText } = body;
     const chats = getStoredChats();
     let session = chats.get(clientPhoneOrId);
+    let shouldResetChat = false;
 
     // Check Chatbot enabled/disabled states from Firestore
     let isWebChatbotEnabled = true;
@@ -739,6 +1021,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         clientPhoneOrId,
         clientName,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         gatheredData: {},
         messages: []
       };
@@ -786,7 +1069,7 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       const startTotalMinutes = startHour * 60 + startMin;
       const endTotalMinutes = endHour * 60 + endMin;
       const step = intervalMin <= 0 ? 30 : intervalMin;
-      for (let m = startTotalMinutes; m <= endTotalMinutes; m += step) {
+      for (let m = startTotalMinutes; m < endTotalMinutes; m += step) {
         const hh = String(Math.floor(m / 60)).padStart(2, '0');
         const mm = String(m % 60).padStart(2, '0');
         slots.push(`${hh}:${mm}`);
@@ -803,7 +1086,11 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
 
       return basicSlots.filter(s => {
         const slotDateTime = `${dateStr}T${s}`;
-        const count = list.filter((serv: any) => serv.appointmentDate === slotDateTime).length;
+        const count = list.filter((serv: any) => {
+          if (serv.appointmentDate !== slotDateTime) return false;
+          const lowerStatus = (serv.status || "").toLowerCase();
+          return lowerStatus !== "cancelado" && lowerStatus !== "cancelada" && lowerStatus !== "entregado" && lowerStatus !== "entregada";
+        }).length;
         if (count >= maxServices) return false;
 
         if (dateStr === todayStr) {
@@ -851,6 +1138,94 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       gathered.clientName = matchedService.clientName;
       gathered.clientPhone = matchedService.clientPhone;
       gathered.alreadyRegistered = "true";
+    }
+
+    // Analizador inteligente multi-campo para Placas, NIV y Vehículo (Marca, Modelo, Año)
+    const normalizedMsg = userText.trim();
+    const msgParts = normalizedMsg.split(/[,;\/]+/).map(p => p.trim());
+    
+    let extractedVehicle = "";
+    let extractedPlate = "";
+    let extractedVin = "";
+
+    // 1. First find any 17-char alphanumeric string which is guaranteed to be a VIN/NIV
+    for (const part of msgParts) {
+      const partUpper = part.toUpperCase();
+      if (partUpper.length === 17 && /^[A-Z0-9]{17}$/.test(partUpper)) {
+        extractedVin = partUpper;
+      }
+    }
+
+    if (!extractedVin) {
+      const vinMatch = normalizedMsg.toUpperCase().match(/\b[A-Z0-9]{17}\b/);
+      if (vinMatch) {
+        extractedVin = vinMatch[0];
+      }
+    }
+
+    // 2. Extract Vehicle (Brand, Model, Year)
+    if (msgParts.length > 1) {
+      for (const part of msgParts) {
+        if (/\b(19|20)\d{2}\b/.test(part) && part.length >= 5 && part.length < 35) {
+          extractedVehicle = part;
+        }
+      }
+    } else {
+      // Find Brand and Year in sentence
+      const textUpper = normalizedMsg.toUpperCase();
+      const brands = ["NISSAN", "HONDA", "TOYOTA", "CHEVROLET", "FORD", "VW", "VOLKSWAGEN", "KIA", "MAZDA", "HYUNDAI", "BMW", "AUDI", "MERCEDES", "JEEP", "CHRYSLER", "DODGE", "CHERY", "BYD", "MG", "SUZUKI", "RENAULT", "PEUGEOT", "SEAT", "CUPRA", "TESLA", "MITSUBISHI"];
+      const yearMatch = normalizedMsg.match(/\b((19|20)\d{2})\b/);
+      if (yearMatch) {
+        const year = yearMatch[1];
+        for (const brand of brands) {
+          const brandIdx = textUpper.indexOf(brand);
+          if (brandIdx !== -1) {
+            const yearIdx = normalizedMsg.indexOf(year);
+            const start = Math.min(brandIdx, yearIdx);
+            const end = Math.max(brandIdx + brand.length, yearIdx + year.length);
+            const slice = normalizedMsg.slice(start, end).trim();
+            if (slice.length > 5 && slice.length < 35) {
+              extractedVehicle = slice;
+              break;
+            }
+          }
+        }
+      }
+      // If still not found but there is a year and message is relatively short
+      if (!extractedVehicle && yearMatch && normalizedMsg.length < 35 && normalizedMsg.length >= 5) {
+        extractedVehicle = normalizedMsg;
+      }
+    }
+
+    // 3. Extract Plate (Placa)
+    for (const part of msgParts) {
+      const partUpper = part.toUpperCase();
+      if (partUpper === extractedVin || part === extractedVehicle) continue;
+      const simpleDigits = part.replace(/\D/g, "");
+      if (simpleDigits.length >= 10) continue; // Skip phone numbers
+      // A Mexican plate has letters and numbers, length 3 to 12
+      if (/^[A-Z0-9\- ]{3,12}$/.test(partUpper) && !/^\d+$/.test(partUpper)) {
+        extractedPlate = partUpper;
+      }
+    }
+
+    // If still no plate found, try to locate it in a long sentence with regex
+    if (!extractedPlate && msgParts.length === 1) {
+      const plateMatch = normalizedMsg.toUpperCase().match(/\b([A-Z0-9]{3,4}[\- ][A-Z0-9]{3,4})\b/);
+      if (plateMatch) {
+        extractedPlate = plateMatch[1];
+      }
+    }
+
+    // Assign to gathered data
+    if (extractedVin) {
+      gathered.vin = extractedVin;
+    }
+    if (extractedPlate) {
+      gathered.plate = extractedPlate;
+    }
+    if (extractedVehicle) {
+      gathered.vehicle = extractedVehicle;
     }
 
     const digitsOnly = userText.replace(/\D/g, "");
@@ -904,7 +1279,8 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         botReply = `¿Estatus de vehículos registrados a este número?`;
         gathered.awaitingStatusConfirmSameNumber = "true";
       } else {
-        botReply = `¡De nada! Ha sido un placer atenderte hoy en Automotriz Kioto. Recuerda que puedes explorar más opciones de Automotriz Kioto en nuestro portal.`;
+        botReply = `¡De nada! Ha sido un placer atenderte hoy en Automotriz Kioto. Tu asistente virtual Kioto se despide y te informa que esta conversación se reiniciará automáticamente enseguida para quedar lista para tus futuras citas. ¡Hasta pronto y excelente día!`;
+        shouldResetChat = true;
       }
     } 
     // 1b. Check if we are waiting for the confirmation to check the SAME number
@@ -998,11 +1374,29 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       gathered.vehicle = userText;
       botReply = `Registrado: *${userText}*.\n\nPor favor proporcione el número de **Placa** de circulación del vehículo.`;
     } else if (!gathered.plate) {
-      gathered.plate = userText.toUpperCase();
-      botReply = `Placa *${gathered.plate}* registrada.\n\nAhora, indique el **NIV** de 17 caracteres (Número de Identificación Vehicular) para el registro completo.`;
+      // Step 3b: Request Placas
+      const upperMsg = userText.trim().toUpperCase();
+      if (upperMsg.length === 17 && /^[A-Z0-9]{17}$/.test(upperMsg)) {
+        // El usuario ingresó el NIV en lugar de las placas
+        gathered.vin = upperMsg;
+        botReply = `Registramos tu número de serie o **NIV** como *${upperMsg}*. Sin embargo, aún requerimos el número de **Placa** de circulación de tu vehículo. ¿Me la podrías proporcionar?`;
+      } else {
+        gathered.plate = upperMsg;
+        if (gathered.vin) {
+          botReply = `Placa *${gathered.plate}* registrada.\n\nPor último, por favor proporcione la **fecha** deseada para su servicio mecánico (en formato AÑO-MES-DÍA, por ejemplo: \`2026-05-25\`).`;
+        } else {
+          botReply = `Placa *${gathered.plate}* registrada.\n\nAhora, indique el **NIV** de 17 caracteres (Número de Identificación Vehicular) para el registro completo.`;
+        }
+      }
     } else if (!gathered.vin) {
-      gathered.vin = userText.toUpperCase();
-      botReply = `NIV registrado con éxito.\n\nPor último, por favor proporcione la **fecha** deseada para su servicio mecánico (en formato AÑO-MES-DÍA, por ejemplo: \`2026-05-25\`).`;
+      // Step 3c: Request NIV
+      const proposedVin = userText.trim().toUpperCase();
+      if (proposedVin.length !== 17) {
+        botReply = `El **NIV** que proporcionaste tiene **${proposedVin.length}** caracteres ("${proposedVin}").\n\nPor favor, ingresa el **NIV** correcto. Debe constar de **exactamente 17 caracteres** alfanuméricos.`;
+      } else {
+        gathered.vin = proposedVin;
+        botReply = `NIV registrado con éxito: **${proposedVin}**.\n\nPor último, por favor proporcione la **fecha** deseada para su servicio mecánico (en formato AÑO-MES-DÍA, por ejemplo: \`2026-05-25\`).`;
+      }
     } else if (!gathered.tempDate && !gathered.appointmentDate) {
       const dateMatch = userText.match(/(\d{4}-\d{2}-\d{2})/);
       const dateStr = dateMatch ? dateMatch[1] : userText.trim();
@@ -1085,7 +1479,8 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
         gathered.appointmentDate = proposedFull;
 
         // Register service appointment into database
-        const id = `serv-${Date.now()}`;
+        const randomDigits = Math.floor(100000 + Math.random() * 900000);
+        const id = `KSM-${randomDigits}`;
         const newServicio = {
           id,
           clientName: gathered.clientName,
@@ -1145,10 +1540,15 @@ export async function executeClientRequest(url: string, init?: RequestInit): Pro
       timestamp: new Date().toISOString()
     };
     session.messages.push(botMsg);
-    chats.set(clientPhoneOrId, session);
+    session.updatedAt = new Date().toISOString();
+    if (shouldResetChat) {
+      chats.delete(clientPhoneOrId);
+    } else {
+      chats.set(clientPhoneOrId, session);
+    }
     saveChats(chats);
 
-    return new MockResponse({ success: true, session, bookingOutcome });
+    return new MockResponse({ success: true, session, bookingOutcome, resetChat: shouldResetChat });
   }
 
   // 18. GET /api/ai/service-improvements
@@ -1196,9 +1596,14 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
       return executeClientRequest(url, init) as any;
     }
 
-    // Otherwise, try standard fetch and fallback on failure
+    // Otherwise, try standard fetch and fallback on failure or HTML responses
     try {
       const res = await fetch(url, init);
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/html")) {
+        console.warn(`API route ${url} returned HTML. Falling back to live client-side database simulation.`);
+        return executeClientRequest(url, init) as any;
+      }
       return res;
     } catch (err) {
       console.warn("API Server unavailable. Falling back to live Frontend Firestore client:", err);

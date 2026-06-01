@@ -92,7 +92,7 @@ export default function App() {
         localStorage.setItem('kioto_chatbot_messenger', String(data.messenger !== false));
       }
     }, (err) => {
-      console.error("Error in chatbot config listener:", err);
+      console.warn("Advertencia de cuota o suscripción en el chatbot: usando configuración local/localStorage fallback.", err.message);
     });
     return () => unsub();
   }, []);
@@ -401,7 +401,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none mb-1 uppercase">
-                Kioto Motors
+                Automotriz Kioto
               </h1>
               <p className="text-[9px] font-bold tracking-widest text-gray-400 uppercase leading-none">
                 {currentUser ? `PANEL DE ${currentUser.role === 'Admin' ? 'ADMIN' : currentUser.role.toUpperCase()}` : 'ACCESO SEGURO'}
@@ -1236,10 +1236,10 @@ export default function App() {
 
                         <div className="space-y-3.5 pt-2">
                           <div>
-                            <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">Página Certificada de Kioto Motors</label>
+                            <label className="block text-[10px] font-bold text-gray-700 uppercase mb-1">Página Certificada de Automotriz Kioto</label>
                             <select className="w-full bg-white border border-gray-200 rounded-lg py-1.5 px-3 text-xs text-gray-850">
-                              <option>Kioto Motors México S.A. de C.V. (ID: 5543210)</option>
-                              <option>Kioto Motors Taller Autorizado (ID: 5543211)</option>
+                              <option>Automotriz Kioto México S.A. de C.V. (ID: 5543210)</option>
+                              <option>Automotriz Kioto Taller Autorizado (ID: 5543211)</option>
                             </select>
                           </div>
 
