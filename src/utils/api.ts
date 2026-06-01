@@ -1589,6 +1589,24 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
 
   if (url.startsWith("/api/")) {
     const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+    
+    // Check if the user has defined a remote backend URL (like Cloud Run) in Vercel's environment variables
+    const viteApiUrl = (import.meta as any).env?.VITE_API_URL || "";
+    if (viteApiUrl) {
+      const cleanBase = viteApiUrl.endsWith("/") ? viteApiUrl.slice(0, -1) : viteApiUrl;
+      try {
+        const remoteRes = await fetch(cleanBase + url, init);
+        // If the server responded with actual API content, return it
+        const contentType = remoteRes.headers.get("content-type") || "";
+        if (!contentType.includes("text/html")) {
+          return remoteRes;
+        }
+        console.warn(`Remote server ${cleanBase} returned HTML for ${url}. Falling back to client-side simulator.`);
+      } catch (err) {
+        console.error(`Failed to reach remote server at ${cleanBase}:`, err);
+      }
+    }
+
     const isLocalOrSandbox = hostname === "localhost" || hostname === "127.0.0.1" || hostname.includes("run.app");
 
     // If hosted externally (like on Vercel), route directly to live Firestore client simulator
