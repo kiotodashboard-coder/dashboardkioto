@@ -182,6 +182,18 @@ export default function App() {
   // Core Database lists
   const [servicios, setServicios] = useState<ServicioMecanico[]>([]);
   const [loadingLists, setLoadingLists] = useState<boolean>(false);
+  const [dbStatus, setDbStatus] = useState<{ type: 'neon' | 'local'; url?: string }>({ type: 'local' });
+  const [showDbExplanation, setShowDbExplanation] = useState<boolean>(false);
+
+  useEffect(() => {
+    // @ts-ignore
+    const viteApiUrl = import.meta.env.VITE_API_URL || "";
+    if (viteApiUrl) {
+      setDbStatus({ type: 'neon', url: viteApiUrl });
+    } else {
+      setDbStatus({ type: 'local' });
+    }
+  }, []);
   
   // Dashboard view selection tabs
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -408,9 +420,27 @@ export default function App() {
               <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none mb-1 uppercase">
                 Automotriz Kioto
               </h1>
-              <p className="text-[9px] font-bold tracking-widest text-gray-400 uppercase leading-none">
-                {currentUser ? `PANEL DE ${currentUser.role === 'Admin' ? 'ADMIN' : currentUser.role.toUpperCase()}` : 'ACCESO SEGURO'}
-              </p>
+              <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                <p className="text-[9px] font-bold tracking-widest text-gray-400 uppercase leading-none">
+                  {currentUser ? `PANEL DE ${currentUser.role === 'Admin' ? 'ADMIN' : currentUser.role.toUpperCase()}` : 'ACCESO SEGURO'}
+                </p>
+                <span className="text-gray-300 text-[10px] select-none leading-none">|</span>
+                {dbStatus.type === 'neon' ? (
+                  <span className="text-[9px] text-emerald-600 font-extrabold tracking-normal uppercase leading-none flex items-center gap-1" title={`Conectado al backend remoto en ${dbStatus.url}`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                    Neon Postgres Activo
+                  </span>
+                ) : (
+                  <span 
+                    onClick={() => setShowDbExplanation(true)}
+                    className="text-[9px] text-amber-600 hover:text-amber-700 underline font-extrabold tracking-normal uppercase leading-none flex items-center gap-1 cursor-pointer" 
+                    title="Haz clic para ver cómo conectar con Neon Postgres en Vercel"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
+                    Simulación Local (Instrucciones)
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1346,6 +1376,49 @@ export default function App() {
 
       {/* Floating Chatbot Widget */}
       {isWebChatbotEnabled && <FloatingChatbot onAppointmentBooked={loadDashboardData} />}
+
+      {/* EXPLANATORY DIALOG FOR NEON POSTGRESQL VS LOCAL STORAGE */}
+      {showDbExplanation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade">
+          <div className="bg-white rounded-2xl border border-gray-100 max-w-xl w-full shadow-2xl p-6 relative">
+            <h3 className="text-lg font-black text-slate-900 border-b border-gray-100 pb-3 mb-4 flex items-center space-x-2">
+              <Database className="w-5 h-5 text-amber-500" />
+              <span>Conexión de Base de Datos en Vercel vs Cloud Run</span>
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed mb-4">
+              La vista que estás observando actualmente está operando bajo el modo de 
+              <strong> Simulación Local (LocalStorage)</strong> en lugar de conectarse en tiempo real a la base de datos central de 
+              <strong> Neon Postgres / Cloud Run</strong>.
+            </p>
+            <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5 mb-4 space-y-2 text-xs">
+              <p className="font-semibold text-slate-800">¿Por qué sucede esto?</p>
+              <p className="text-gray-600">
+                Vercel es un servicio de hosting estático para el cliente (React SPA). No ejecuta tu backend de Node/Express en <code>server.ts</code>. 
+                El servidor real con la conexión a <strong>Neon Postgres</strong> se ejecuta dentro de tu contenedor de <strong>Google Cloud Run</strong> en la URL:
+              </p>
+              <div className="bg-slate-950 text-emerald-400 p-2 font-mono text-[10px] rounded border border-slate-800 select-all overflow-x-auto">
+                https://ais-pre-3arbs2kotcgihptz3rbf6o-82971551649.us-east1.run.app
+              </div>
+            </div>
+            <div className="space-y-3 mb-6">
+              <p className="text-xs font-bold text-slate-800">Cómo solucionarlo en 3 sencillos pasos:</p>
+              <ol className="list-decimal list-inside text-xs text-gray-600 space-y-1.5 ml-1">
+                <li>Ve a la configuración de tu proyecto en tu Consola de Vercel (<b>Project Settings &gt; Environment Variables</b>).</li>
+                <li>Agrega una nueva variable llamada <strong>VITE_API_URL</strong> y asígnale el valor de la URL de Cloud Run de arriba.</li>
+                <li><strong>¡IMPORTANTE! Re-despliega (Redeploy) tu proyecto en Vercel</strong>. Vite necesita compilar esta nueva de variable en el frontend a la hora de construir el bundle estático. Si no re-despliegas, no verá el cambio.</li>
+              </ol>
+            </div>
+            <div className="flex justify-end pt-3 border-t border-gray-100">
+              <button
+                onClick={() => setShowDbExplanation(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-4 py-2 font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FOOTER */}
       <footer className="bg-white border-t border-gray-200 py-6 text-center text-xs text-gray-400 mt-12 shrink-0">
