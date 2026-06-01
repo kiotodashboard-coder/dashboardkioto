@@ -1576,7 +1576,8 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
 
     // 2. If hosted externally (like on Vercel):
     // Try to route requests to the remote backend (Cloud Run) if VITE_API_URL is defined.
-    const viteApiUrl = (import.meta as any).env?.VITE_API_URL || "";
+    // @ts-ignore
+    const viteApiUrl = import.meta.env.VITE_API_URL || "";
     if (viteApiUrl) {
       const cleanBase = viteApiUrl.endsWith("/") ? viteApiUrl.slice(0, -1) : viteApiUrl;
       try {
