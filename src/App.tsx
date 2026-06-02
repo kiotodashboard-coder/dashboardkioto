@@ -186,13 +186,29 @@ export default function App() {
   const [showDbExplanation, setShowDbExplanation] = useState<boolean>(false);
 
   useEffect(() => {
-    // @ts-ignore
-    const viteApiUrl = import.meta.env.VITE_API_URL || "";
-    if (viteApiUrl) {
-      setDbStatus({ type: 'neon', url: viteApiUrl });
-    } else {
-      setDbStatus({ type: 'local' });
-    }
+    // Check database connection status via backend API
+    customFetch('/api/db/status')
+      .then(res => {
+        if (!res.ok) throw new Error('API returned error status');
+        return res.json();
+      })
+      .then(data => {
+        if (data && data.success && data.type === 'neon') {
+          setDbStatus({ type: 'neon', url: 'Neon Postgres (Activa)' });
+        } else {
+          setDbStatus({ type: 'local', url: data?.error || 'Sin conexión a la base externa' });
+        }
+      })
+      .catch(err => {
+        console.warn('Backend DB Status API not reachable yet. Checking VITE_API_URL fallback...', err);
+        // @ts-ignore
+        const viteApiUrl = import.meta.env.VITE_API_URL || "";
+        if (viteApiUrl) {
+          setDbStatus({ type: 'neon', url: viteApiUrl });
+        } else {
+          setDbStatus({ type: 'local' });
+        }
+      });
   }, []);
   
   // Dashboard view selection tabs
@@ -1383,37 +1399,57 @@ export default function App() {
           <div className="bg-white rounded-2xl border border-gray-100 max-w-xl w-full shadow-2xl p-6 relative">
             <h3 className="text-lg font-black text-slate-900 border-b border-gray-100 pb-3 mb-4 flex items-center space-x-2">
               <Database className="w-5 h-5 text-amber-500" />
-              <span>Conexión de Base de Datos en Vercel vs Cloud Run</span>
+              <span>Conexión de Base de Datos en Render (Neon Postgres)</span>
             </h3>
             <p className="text-xs text-gray-600 leading-relaxed mb-4">
-              La vista que estás observando actualmente está operando bajo el modo de 
-              <strong> Simulación Local (LocalStorage)</strong> en lugar de conectarse en tiempo real a la base de datos central de 
-              <strong> Neon Postgres / Cloud Run</strong>.
+              La aplicación detectó que estás en <b>Render</b>. Sin embargo, actualmente se encuentra en modo de 
+              <strong> Simulación Local (LocalStorage)</strong>. Esto ocurre generalmente por una de estas razones:
             </p>
-            <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5 mb-4 space-y-2 text-xs">
-              <p className="font-semibold text-slate-800">¿Por qué sucede esto?</p>
-              <p className="text-gray-600">
-                Vercel es un servicio de hosting estático para el cliente (React SPA). No ejecuta tu backend de Node/Express en <code>server.ts</code>. 
-                El servidor real con la conexión a <strong>Neon Postgres</strong> se ejecuta dentro de tu contenedor de <strong>Google Cloud Run</strong> en la URL:
-              </p>
-              <div className="bg-slate-950 text-emerald-400 p-2 font-mono text-[10px] rounded border border-slate-800 select-all overflow-x-auto">
-                https://ais-pre-3arbs2kotcgihptz3rbf6o-82971551649.us-east1.run.app
+            
+            <div className="space-y-4 mb-6">
+              <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs">
+                <p className="font-bold text-slate-800 mb-1">1. Falta la variable DATABASE_URL en Render</p>
+                <p className="text-gray-600">
+                  Tu servidor de Node necesita saber dónde está tu base de datos de Neon. Asegúrate de añadir la variable en Render:
+                </p>
+                <ul className="list-disc list-inside mt-1 space-y-1 text-gray-500">
+                  <li>Ve a la pestaña <b>Environment</b> de tu Web Service en Render.</li>
+                  <li>Agrega la clave <code>DATABASE_URL</code>.</li>
+                  <li>El valor debe ser la cadena de conexión de Neon (empieza con <code>postgresql://...</code>).</li>
+                </ul>
+              </div>
+
+              {dbStatus.url && (
+                <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-800">
+                  <p className="font-bold">Error reportado por el servidor:</p>
+                  <p className="font-mono text-[10px] bg-white/50 p-1.5 rounded mt-1 border border-red-200 overflow-x-auto">
+                    {dbStatus.url}
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs text-amber-900">
+                <p className="font-bold">2. Tipo de servicio en Render</p>
+                <p className="text-gray-700 mt-1">
+                  Asegúrate de haber creado un <b>Web Service</b> en Render (que compila y ejecuta <code>npm start</code>), y <b>no</b> un Static Site. El backend requiere Node.js para conectarse a Neon.
+                </p>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-900">
+                <p className="font-bold">✨ ¡Acabamos de implementar la solución de Puertos!</p>
+                <p className="text-gray-700 mt-1">
+                  Hemos corregido la configuración del puerto para que Render asigne dinámicamente tu URL. 
+                  Solo necesitas <b>volver a desplegar / re-desplegar (Manual Deploy &gt; Clear Cache &amp; Deploy)</b> tu servicio en Render para que tome este cambio.
+                </p>
               </div>
             </div>
-            <div className="space-y-3 mb-6">
-              <p className="text-xs font-bold text-slate-800">Cómo solucionarlo en 3 sencillos pasos:</p>
-              <ol className="list-decimal list-inside text-xs text-gray-600 space-y-1.5 ml-1">
-                <li>Ve a la configuración de tu proyecto en tu Consola de Vercel (<b>Project Settings &gt; Environment Variables</b>).</li>
-                <li>Agrega una nueva variable llamada <strong>VITE_API_URL</strong> y asígnale el valor de la URL de Cloud Run de arriba.</li>
-                <li><strong>¡IMPORTANTE! Re-despliega (Redeploy) tu proyecto en Vercel</strong>. Vite necesita compilar esta nueva de variable en el frontend a la hora de construir el bundle estático. Si no re-despliegas, no verá el cambio.</li>
-              </ol>
-            </div>
+
             <div className="flex justify-end pt-3 border-t border-gray-100">
               <button
                 onClick={() => setShowDbExplanation(false)}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-4 py-2 font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
               >
-                Entendido
+                Entendido, voy a re-desplegar
               </button>
             </div>
           </div>

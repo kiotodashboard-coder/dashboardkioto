@@ -22,7 +22,7 @@ const { Pool } = pg;
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Enable manual CORS to let external hosts (like Vercel) connect safely to the API
 app.use((req, res, next) => {
@@ -489,6 +489,26 @@ async function triggerWhatsAppLog(clientName: string, clientPhone: string, type:
   }
   return newNotif;
 }
+
+// --- DATABASE STATUS ENDPOINT ---
+app.get("/api/db/status", async (req, res) => {
+  try {
+    const pool = getPgPool();
+    await pool.query("SELECT 1+1 AS result");
+    res.json({
+      success: true,
+      type: "neon",
+      details: "Conectado a Neon Postgres de manera exitosa"
+    });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      type: "local",
+      error: err.message,
+      details: "Usando base simulada por falla de conexión"
+    });
+  }
+});
 
 // --- DATABASE REINITIALIZER ENDPOINT ---
 app.get("/api/db/reset", async (req, res) => {
