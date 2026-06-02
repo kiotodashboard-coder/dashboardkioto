@@ -1556,7 +1556,7 @@ export async function customFetch(input: RequestInfo | URL, init?: RequestInit):
 
   if (url.startsWith("/api/")) {
     const hostname = typeof window !== "undefined" ? window.location.hostname : "";
-    const isLocalOrSandbox = hostname === "localhost" || hostname === "127.0.0.1" || hostname.includes("run.app");
+    const isLocalOrSandbox = hostname === "localhost" || hostname === "127.0.0.1" || hostname.includes("run.app") || hostname.includes("onrender.com");
 
     // 1. If running in a local or sandbox environment, ALWAYS talk to the local Express backend relatively.
     if (isLocalOrSandbox) {
